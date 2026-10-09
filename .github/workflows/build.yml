@@ -29,6 +29,9 @@ jobs:
         run: |
           mkdir -p "$HOME/.gradle/init.d"
           cp .github/ci/ci-repos.gradle "$HOME/.gradle/init.d/ci-repos.gradle"
+      - name: Static audit (Kotlin JSON qualified names)
+        continue-on-error: true
+        run: python3 .github/ci/audit_kotlin_json.py .
       - name: Accept SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
       - name: Run JVM unit tests
