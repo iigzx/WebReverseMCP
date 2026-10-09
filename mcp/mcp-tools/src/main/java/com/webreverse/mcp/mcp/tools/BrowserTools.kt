@@ -448,24 +448,6 @@ object BrowserTools {
         }
 
     /** 解码 data: URI，返回 (字节, mime)。支持 data:[mime][;base64],payload 两种格式 */
-    /**
-     * 解析 tabIds 入参：JSON 数组字符串（["a","b"]）或裸 CSV（a,b）都接受；
-     * 空串/解析失败返回空列表（tab.group 用）。原实现直接忽略该参数。
-     */
-    private fun parseTabIds(raw: String): List<String> {
-        val text = raw.trim()
-        if (text.isEmpty()) return emptyList()
-        if (text.startsWith("[")) {
-            return runCatching {
-                (kotlinx.serialization.json.Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonArray)
-                    ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-                    ?.filter { it.isNotBlank() }
-                    .orEmpty()
-            }.getOrDefault(emptyList())
-        }
-        return text.split(',').map { it.trim() }.filter { it.isNotBlank() }
-    }
-
     private fun decodeDataUri(uri: String): Pair<ByteArray, String>? {
         return try {
             val headerEnd = uri.indexOf(',', 5)
@@ -537,6 +519,24 @@ object BrowserTools {
 
 /** Tab Tools：多标签管理 */
 object TabTools {
+
+    /**
+     * 解析 tabIds 入参：JSON 数组字符串（["a","b"]）或裸 CSV（a,b）都接受；
+     * 空串/解析失败返回空列表（tab.group 用）。原实现直接忽略该参数。
+     */
+    private fun parseTabIds(raw: String): List<String> {
+        val text = raw.trim()
+        if (text.isEmpty()) return emptyList()
+        if (text.startsWith("[")) {
+            return runCatching {
+                (kotlinx.serialization.json.Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonArray)
+                    ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                    ?.filter { it.isNotBlank() }
+                    .orEmpty()
+            }.getOrDefault(emptyList())
+        }
+        return text.split(',').map { it.trim() }.filter { it.isNotBlank() }
+    }
 
     fun all(deps: ToolDependencies): List<McpTool> {
         val f = ToolFactory(deps)
