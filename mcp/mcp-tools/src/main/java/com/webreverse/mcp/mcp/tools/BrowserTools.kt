@@ -608,13 +608,14 @@ object BrowserTools {
                 "目标区域过大（${singlePass.toLong()} 平方 CSS 像素），超出单张截图上限。请用 selector 缩小范围，或分段截取（配合 browser.download 落盘）",
             )
         }
-        var res = deps.debuggerManager.cdpCall(engine, "Page.captureScreenshot", shotParams(format, clip)) ?: return null
+        val res = deps.debuggerManager.cdpCall(engine, "Page.captureScreenshot", shotParams(format, clip)) ?: return null
         var data = (res["data"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: return null
         var usedFormat = format
         // 体积防护：整页 PNG 容易几十 MB（base64 再膨胀 1/3），超出 MCP 舒适区时自动换 jpeg 重截一次
         if (data.length > MAX_SCREENSHOT_B64_CHARS) {
-            res = deps.debuggerManager.cdpCall(engine, "Page.captureScreenshot", shotParams("jpeg", clip, quality = 70))
-            val smaller = (res?.get("data") as? kotlinx.serialization.json.JsonPrimitive)?.content
+            // 注意：不能用 `res = ...` —— res 由上面的 Elvis 推断为非空类型，重赋可空值会编译失败
+            val retry = deps.debuggerManager.cdpCall(engine, "Page.captureScreenshot", shotParams("jpeg", clip, quality = 70))
+            val smaller = (retry?.get("data") as? kotlinx.serialization.json.JsonPrimitive)?.content
             if (!smaller.isNullOrBlank()) {
                 data = smaller
                 usedFormat = "jpeg"
