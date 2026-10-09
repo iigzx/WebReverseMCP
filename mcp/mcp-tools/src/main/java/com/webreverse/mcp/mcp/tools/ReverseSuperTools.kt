@@ -455,7 +455,7 @@ object ReverseSuperTools {
                 inputSchema = Schemas.objectSchema(
                     "value" to Schemas.strSchema("原始值（自动算指纹）或直接传 fingerprint"),
                     "fingerprint" to Schemas.strSchema("值指纹（提供则跳过 value 计算）"),
-                    "topN" to Schemas.intSchema("返回 Top 关联，默认 10"),
+                    "topN" to Schemas.intSchema("返回 Top 关联条数，默认 10（1~200）"),
                 ),
             ) { args ->
                 var fp = ToolArgs.str(args, "fingerprint")
@@ -464,6 +464,8 @@ object ReverseSuperTools {
                     if (value.isBlank()) return@tool McpToolResult.error("MISSING_VALUE", "value 或 fingerprint 必填")
                     fp = ValueFingerprint.of(value) ?: return@tool McpToolResult.error("SHORT_VALUE", "值过短/过长无法指纹（3~4096 字符）")
                 }
+                // topN：此前声明了却不读，输出固定 50/20。现按 topN 截取（保留最近的关联）
+                val topN = ToolArgs.int(args, "topN", 10).coerceIn(1, 200)
                 val buf = deps.evidenceStore.traceBuffer
                 val events = buf.findByFingerprint(fp)
                 val nodes = deps.evidenceStore.nodesByFingerprint(fp)
@@ -471,15 +473,16 @@ object ReverseSuperTools {
                 McpToolResult.json(
                     buildJsonObject {
                         put("fingerprint", fp)
-                        put("events", JsonArray(events.takeLast(50).map { traceEventJson(it) }))
+                        put("topN", JsonPrimitive(topN))
+                        put("events", JsonArray(events.takeLast(topN).map { traceEventJson(it) }))
                         put("eventCount", events.size)
-                        put("graphNodes", JsonArray(nodes.map {
+                        put("graphNodes", JsonArray(nodes.take(topN).map {
                             buildJsonObject {
                                 put("key", it.key); put("label", it.label); put("type", it.type.name)
                             }
                         }))
                         put("evidenceCount", evidences.size)
-                        put("evidenceTitles", JsonArray(evidences.takeLast(20).map { JsonPrimitive(it.title) }))
+                        put("evidenceTitles", JsonArray(evidences.takeLast(topN).map { JsonPrimitive(it.title) }))
                         put(
                             "hint",
                             JsonPrimitive(

@@ -445,6 +445,16 @@ class CdpDebuggerSession private constructor(
         return session.call("Debugger.pause") != null
     }
 
+    /**
+     * 任意 CDP 方法透传（供上层做通用能力扩展）。
+     *
+     * 背景：本类此前只封装固定域方法，`browser.screenshot` 的 fullPage / selector
+     * 因此无处调用 `Page.captureScreenshot`，两个参数被静默忽略。公开一个薄透传
+     * 通道，新增域名能力不必再改本类。
+     */
+    suspend fun rawCall(method: String, params: JsonObject = JsonObject(emptyMap())): JsonObject? =
+        session.call(method, params)
+
     suspend fun resume(): Boolean = session.call("Debugger.resume") != null
 
     suspend fun stepInto(): Boolean = session.call("Debugger.stepInto") != null

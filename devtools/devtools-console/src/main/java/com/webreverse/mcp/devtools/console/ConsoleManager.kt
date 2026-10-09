@@ -46,6 +46,111 @@ class ConsoleManager {
         return AppResult.success(result)
     }
 
+    /**
+     * 智能求值：表达式返回 thenable 时自动等它结算，否则保持同步语义原样返回。
+     *
+     * 背景（AI 使用体验）：Android WebView 的 evaluateJavascript 回调不等待 Promise，
+     * `js.evaluate("fetch(...).then(r=>r.json())")` 只会得到 `{}`。此前文档要求 AI 用
+     * 「暂存 + 轮询」两步法绕开，既费轮次又容易踩空。
+     *
+     * 实现为 **单次求值**（不重复执行表达式，避免副作用）：包一层脚本，
+     * 若求值结果是 thenable 就把它挂到页面槽位 window.__mcpAsyncResults 并返回
+     * `{__mcpThenable:true, slot:id}` 标记；Kotlin 侧轮询槽位取回结算值。
+     * 非 thenable 时包装函数直接 `return v` —— WebView 的 JSON 编码结果与旧路径完全一致，
+     * 因此对既有调用零行为变化（字符串仍是 JSON 引号形式、对象仍是 JSON 文本）。
+     *
+     * 异常也不再被吞成 `null`：包装内 catch 后写入槽位，返回明确错误（AI 可自行修表达式）。
+     */
+    suspend fun evaluateAuto(engine: BrowserEngine, expression: String): AppResult<String> {
+        if (expression.isBlank()) return AppResult.failure(AppError.INVALID_ARGUMENTS)
+        val probe = """
+            (function(){
+              try {
+                window.__mcpAsyncResults = window.__mcpAsyncResults || {};
+                var v = eval(${JsScripts.quote(expression)});
+                if (v && typeof v.then === 'function') {
+                  var seq = (window.__mcpAsyncSeq = (window.__mcpAsyncSeq || 0) + 1);
+                  var id = 'auto' + seq;
+                  window.__mcpAsyncResults[id] = {done:false};
+                  var settle = function(ok, x){
+                    var s;
+                    try { s = (typeof x === 'string') ? x : JSON.stringify(x); } catch(e){ s = String(x); }
+                    if (s === undefined || s === null) s = String(x);
+                    window.__mcpAsyncResults[id] = ok
+                      ? {done:true, ok:true, value:String(s).substring(0, 1000000)}
+                      : {done:true, ok:false, error:String(x && x.message ? x.message : x).substring(0, 10000)};
+                  };
+                  v.then(function(r){ settle(true, r); }, function(e){ settle(false, e); });
+                  return JSON.stringify({__mcpThenable:true, slot:id});
+                }
+                return v;
+              } catch(e) {
+                return JSON.stringify({__mcpThrown:true, message:String(e && e.message ? e.message : e)});
+              }
+            })()
+        """.trimIndent()
+        val raw = engine.evaluateJavascript(probe) ?: return AppResult.failure(AppError.JS_EXECUTION_FAILED)
+        val marker = parseProbeMarker(raw)
+        if (marker != null) {
+            val thrown = marker["__mcpThrown"]
+            if (thrown != null) {
+                return AppResult.failure(AppError("JS_EXECUTION_FAILED", "表达式抛异常：${thrown.take(2000)}"))
+            }
+            val slot = marker["__mcpThenable"] ?: return AppResult.success(raw)
+            val value = pollAsyncSlot(engine, slot)
+                ?: return AppResult.failure(
+                    AppError(
+                        "JS_EXECUTION_FAILED",
+                        "Promise 未在 30s 内结算（rejected、页面导航或长期 pending）。" +
+                            "如需立即拿到 Promise 对象本身，用 awaitPromise=false",
+                    ),
+                )
+            return AppResult.success(value)
+        }
+        return AppResult.success(raw)
+    }
+
+    /** 解析智能求值探针返回的标记对象；非标记返回 null */
+    private fun parseProbeMarker(raw: String): Map<String, String>? {
+        val text = raw.trim()
+        if (!text.contains("__mcpThenable") && !text.contains("__mcpThrown")) return null
+        return runCatching {
+            val outer = Json.parseToJsonElement(text)
+            val inner = (outer as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return null
+            val obj = Json.parseToJsonElement(inner) as? kotlinx.serialization.json.JsonObject ?: return null
+            obj.mapValues { (_, v) -> (v as? kotlinx.serialization.json.JsonPrimitive)?.content ?: v.toString() }
+        }.getOrNull()
+    }
+
+    /** 轮询页面槽位取回 Promise 结算值（与引擎 evaluateJavascriptAsync 同一槽位协议） */
+    private suspend fun pollAsyncSlot(engine: BrowserEngine, slot: String): String? {
+        val deadline = System.currentTimeMillis() + 30_000
+        while (System.currentTimeMillis() < deadline) {
+            val poll = """
+                (function(){
+                  var r = window.__mcpAsyncResults && window.__mcpAsyncResults[${JsScripts.quote(slot)}];
+                  if (!r || !r.done) return null;
+                  var out = JSON.stringify(r);
+                  try { delete window.__mcpAsyncResults[${JsScripts.quote(slot)}]; } catch(e){}
+                  return out;
+                })()
+            """.trimIndent()
+            val raw = engine.evaluateJavascript(poll)
+            val settled = runCatching {
+                val outer = Json.parseToJsonElement(raw ?: "")
+                val inner = (outer as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return@runCatching null
+                Json.parseToJsonElement(inner) as? kotlinx.serialization.json.JsonObject
+            }.getOrNull()
+            if (settled != null) {
+                val ok = settled["ok"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } == "true"
+                if (!ok) return null
+                return settled["value"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+            }
+            kotlinx.coroutines.delay(120)
+        }
+        return null
+    }
+
     suspend fun callFunction(engine: BrowserEngine, functionName: String, vararg args: String): AppResult<String> {
         val argsJson = args.joinToString(",") { JsScripts.quote(it) }
         val result = engine.evaluateJavascript("($functionName)($argsJson)")
