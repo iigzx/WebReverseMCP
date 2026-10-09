@@ -145,11 +145,11 @@ object BrowserTools {
                         )
                     return@tool viewportShotResult(
                         bitmap, format,
-                        buildJsonObject {
-                            put("degraded", JsonPrimitive(true))
-                            put("requested", JsonPrimitive(if (selector != null) "selector" else "fullPage"))
-                            put("reason", JsonPrimitive("CDP 不可用（未 attach 或会话建立失败）"))
-                            put("remedy", JsonPrimitive("先 debugger(action=\"attach\")，再重试本次调用即可拿到全页/元素截图"))
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("degraded", kotlinx.serialization.json.JsonPrimitive(true))
+                            put("requested", kotlinx.serialization.json.JsonPrimitive(if (selector != null) "selector" else "fullPage"))
+                            put("reason", kotlinx.serialization.json.JsonPrimitive("CDP 不可用（未 attach 或会话建立失败）"))
+                            put("remedy", kotlinx.serialization.json.JsonPrimitive("先 debugger(action=\"attach\")，再重试本次调用即可拿到全页/元素截图"))
                         },
                     )
                 }
@@ -437,8 +437,9 @@ object BrowserTools {
      */
     private fun applyMimeExtension(filename: String, mime: String?): String {
         if (mime == null) return filename
+        // 已带扩展名就原样返回（不覆盖 AI 显式给的名字）
         val base = filename.substringBefore('?')
-        if (base.substringAfterLast('/', base).contains('.')) return filename
+        if (base.trimStart('.').contains('.')) return filename
         val ext = when (mime.substringBefore(';').trim().lowercase()) {
             "image/png" -> "png"
             "image/jpeg", "image/jpg" -> "jpg"
