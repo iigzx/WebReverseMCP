@@ -98,6 +98,45 @@ class BrowserService(
         }
     }
 
+    /**
+     * 移动标签页到指定位置（MCP `tab.move` 用）。
+     *
+     * 修复：`tab.move` 此前只 return 一句「标签页已移动」——不读参数、不改状态，
+     * 是纯假成功（AI 以为移动了，实际标签顺序没变）。这里补上真实重排。
+     * index 越界自动收敛到 [0, size-1]；tabId 不存在返回 false。
+     */
+    fun moveTab(tabId: String, index: Int): Boolean {
+        val list = _tabs.value
+        val from = list.indexOfFirst { it.id == tabId }
+        if (from < 0) return false
+        val to = index.coerceIn(0, list.lastIndex)
+        if (from == to) return true
+        val mutable = list.toMutableList()
+        val moved = mutable.removeAt(from)
+        mutable.add(to, moved)
+        _tabs.value = mutable
+        return true
+    }
+
+    /**
+     * 更新标签页标记位（固定/静音）。
+     *
+     * 修复：`BrowserTab.isPinned` / `isMuted` 早就在模型里，却没有任何代码写过它们，
+     * `tab.pin` / `tab.mute` 也只会回「已切换」的假成功。补上写入路径后，
+     * `tab.list` 返回的 pinned / muted 才是真值。
+     * 传 null 表示该位不动；tabId 不存在返回 null。
+     */
+    fun updateTabFlags(tabId: String, pinned: Boolean? = null, muted: Boolean? = null): BrowserTab? {
+        val list = _tabs.value
+        val idx = list.indexOfFirst { it.id == tabId }
+        if (idx < 0) return null
+        val updated = list[idx].let {
+            it.copy(isPinned = pinned ?: it.isPinned, isMuted = muted ?: it.isMuted)
+        }
+        _tabs.value = list.toMutableList().also { it[idx] = updated }
+        return updated
+    }
+
     suspend fun closeAll() {
         sessions.keys.toList().forEach { closeTab(it) }
     }

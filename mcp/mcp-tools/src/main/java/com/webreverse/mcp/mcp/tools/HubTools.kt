@@ -59,6 +59,35 @@ object HubTools {
     private const val NEXT_ACTIONS_MAX = 8
 
     /**
+     * 成员自带 `action` 参数时，调用方改用这些键传「该成员自己的子动作」。
+     *
+     * 根因：枢纽用 `action` 当调度键，并把整个 arguments 原样转发给成员；成员若有同名
+     * `action` 入参，收到的会是枢纽动作名（如 "create"、"attach_remote"）而不是调用方
+     * 想传的子动作 —— 表现为静默降级（`HookAction.valueOf("CREATE")` 抛错回落 LOG）
+     * 或直接报错（`dynamic.code_add_rule` 的 action 校验）。带该冲突的成员共 5 个：
+     * hook.create / browser.attach_remote / terminal.ndk / terminal.sandbox /
+     * dynamic.code_add_rule。按顺序取第一个非空键。
+     */
+    private val SUB_ACTION_KEYS = listOf("subAction", "memberAction", "_action")
+
+    /** 成员是否自带名为 action 的入参（此类成员的子动作必须走 [SUB_ACTION_KEYS]） */
+    private fun hasOwnActionParam(tool: McpTool): Boolean =
+        (tool.metadata.inputSchema["properties"] as? JsonObject)?.containsKey("action") == true
+
+    /** 成员自身 action 参数的一句话说明（写进枢纽 description，告诉 AI 该传什么值） */
+    private fun ownActionHint(tool: McpTool): String {
+        val prop = (tool.metadata.inputSchema["properties"] as? JsonObject)
+            ?.get("action") as? JsonObject ?: return "见成员参数说明"
+        val enumValues = (prop["enum"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            .orEmpty()
+        if (enumValues.isNotEmpty()) return enumValues.joinToString(" / ")
+        val desc = (prop["description"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        if (desc.isBlank()) return "见成员参数说明"
+        return if (desc.length > DESC_LINE_MAX) desc.take(DESC_LINE_MAX) + "…" else desc
+    }
+
+    /**
      * 大命名空间手动拆分：action 过多（>30）时 AI 选型准确率下降，
      * 按职责拆为子枢纽。key = 原命名空间，value = (子枢纽名, 该枢纽承载的 action 集)，
      * 未列出的 action 归入命名空间同名主枢纽。
@@ -122,6 +151,9 @@ object HubTools {
         val sorted = members.sortedBy { it.metadata.name }
         val actionNames = sorted.map { it.metadata.name.removePrefix("$ns.") }
 
+        // 自带 action 入参的成员：枢纽调度键与其撞名，调用方须改用 subAction 传子动作
+        val subActionMembers = sorted.filter { hasOwnActionParam(it) }
+
         // ---- 1) description：职责标题 + 全部 action 及各自入参（AI 选型依据） ----
         val title = HUB_TITLES[hubName]
         val desc = buildString {
@@ -137,6 +169,14 @@ object HubTools {
                 append("- $action: $brief")
                 if (props.isNotEmpty()) append("（参数: ${props.joinToString(", ")}）")
                 append('\n')
+            }
+            if (subActionMembers.isNotEmpty()) {
+                append("\n⚠ 下列 action 自身也带一个 action 参数（子动作），枢纽的 action 会把它覆盖掉，")
+                append("必须改用 subAction 传；不传则成员用它自己的默认子动作：\n")
+                subActionMembers.forEach { t ->
+                    val action = t.metadata.name.removePrefix("$ns.")
+                    append("- $action: subAction=${ownActionHint(t)}\n")
+                }
             }
         }.trimEnd()
 
@@ -163,6 +203,23 @@ object HubTools {
                         },
                     )
                     mergedProps.forEach { (k, v) -> put(k, v) }
+                    // 冲突成员的子动作入口（仅在有成员自带 action 入参时出现）
+                    if (subActionMembers.isNotEmpty()) {
+                        put(
+                            "subAction",
+                            buildJsonObject {
+                                put("type", JsonPrimitive("string"))
+                                put(
+                                    "description",
+                                    JsonPrimitive(
+                                        "成员自身也带 action 参数时，用它传该成员自己的子动作" +
+                                            "（成员：${subActionMembers.joinToString("、") { it.metadata.name.removePrefix("$ns.") }}）。" +
+                                            "不传则用成员默认值。",
+                                    ),
+                                )
+                            },
+                        )
+                    }
                 },
             )
             put("required", JsonArray(listOf(JsonPrimitive("action"))))
@@ -205,7 +262,25 @@ object HubTools {
                         "ACTION_NOT_FOUND",
                         "未知 action \"$action\"。可选 action：${actionNames.joinToString(", ")}",
                     )
-                val result = member.execute(context, arguments)
+                // 成员自带 action 入参时（hook.create / browser.attach_remote /
+                // terminal.ndk / terminal.sandbox / dynamic.code_add_rule）：剔除枢纽
+                // 调度键，成员自己的子动作改由 subAction（或 memberAction/_action）传入。
+                // 否则枢纽动作名（"create"/"attach_remote"…）会被成员当成自己的动作，
+                // 静默降级或直接报错。
+                val memberArgs = if (hasOwnActionParam(member)) {
+                    val subAction = SUB_ACTION_KEYS.firstNotNullOfOrNull { key ->
+                        (arguments[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                    }
+                    buildJsonObject {
+                        arguments.forEach { (key, value) ->
+                            if (key != "action" && key !in SUB_ACTION_KEYS) put(key, value)
+                        }
+                        if (subAction != null) put("action", JsonPrimitive(subAction))
+                    }
+                } else {
+                    arguments
+                }
+                val result = member.execute(context, memberArgs)
                 return withNextActions(result, actionNames - action)
             }
         }

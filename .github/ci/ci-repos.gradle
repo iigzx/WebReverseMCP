@@ -1,0 +1,21 @@
+// CI 专用 Gradle init 脚本（由 build.yml 拷到 ~/.gradle/init.d/ 后自动生效）
+//
+// 背景：settings.gradle.kts 把阿里云镜像排在最前（为国内构建环境优化）。海外
+// runner 上镜像链路不稳定/内容不全时，插件与依赖解析可能失败
+// （实测：Plugin [id: 'androidx.room'] 解析不到，而同一坐标在 dl.google.com 上是好的）。
+//
+// 做法：清空仓库列表后先放官方仓库 —— 随后 settings 脚本自己声明的阿里云镜像
+// 会追加到末尾，等于「官方优先、镜像兜底」，两个环境都能构建。
+beforeSettings { settings ->
+    settings.pluginManagement.repositories {
+        clear()
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    settings.dependencyResolutionManagement.repositories {
+        clear()
+        google()
+        mavenCentral()
+    }
+}

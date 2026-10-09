@@ -25,6 +25,10 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Install CI repo init script (official repos first)
+        run: |
+          mkdir -p "$HOME/.gradle/init.d"
+          cp .github/ci/ci-repos.gradle "$HOME/.gradle/init.d/ci-repos.gradle"
       - name: Accept SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
       - name: Run JVM unit tests
@@ -49,6 +53,10 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Install CI repo init script (official repos first)
+        run: |
+          mkdir -p "$HOME/.gradle/init.d"
+          cp .github/ci/ci-repos.gradle "$HOME/.gradle/init.d/ci-repos.gradle"
       - name: Ensure required SDK packages
         run: |
           SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"

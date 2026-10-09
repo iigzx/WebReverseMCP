@@ -448,6 +448,24 @@ object BrowserTools {
         }
 
     /** 解码 data: URI，返回 (字节, mime)。支持 data:[mime][;base64],payload 两种格式 */
+    /**
+     * 解析 tabIds 入参：JSON 数组字符串（["a","b"]）或裸 CSV（a,b）都接受；
+     * 空串/解析失败返回空列表（tab.group 用）。原实现直接忽略该参数。
+     */
+    private fun parseTabIds(raw: String): List<String> {
+        val text = raw.trim()
+        if (text.isEmpty()) return emptyList()
+        if (text.startsWith("[")) {
+            return runCatching {
+                (kotlinx.serialization.json.Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonArray)
+                    ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                    ?.filter { it.isNotBlank() }
+                    .orEmpty()
+            }.getOrDefault(emptyList())
+        }
+        return text.split(',').map { it.trim() }.filter { it.isNotBlank() }
+    }
+
     private fun decodeDataUri(uri: String): Pair<ByteArray, String>? {
         return try {
             val headerEnd = uri.indexOf(',', 5)
@@ -586,18 +604,62 @@ object TabTools {
                 McpToolResult.text("已刷新标签页: ${session.tabId}")
             },
             f.tool(
-                "tab.mute", "静音/取消静音标签页", ToolCategory.TAB,
-                PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("tabId" to Schemas.strSchema("标签页 ID"), "muted" to Schemas.boolSchema("是否静音")),
+                "tab.mute", "静音/取消静音标签页：写入真实状态位（tab.list 的 muted 字段）并用 JS 让页面内已存在/后续新增的 video/audio 静音（取消时恢复）", ToolCategory.TAB,
+                PermissionScope.MODIFY_PAGE, RiskLevel.LOW,
+                inputSchema = Schemas.objectSchema("tabId" to Schemas.strSchema("标签页 ID（缺省用当前活动标签页）"), "muted" to Schemas.boolSchema("是否静音（默认 true）")),
             ) { args ->
-                McpToolResult.text("标签页静音状态已切换")
+                val tabId = ToolArgs.optStr(args, "tabId") ?: deps.browserService.activeTabId.value
+                    ?: return@tool McpToolResult.error("NO_ACTIVE_TAB", "没有活动标签页")
+                val muted = ToolArgs.bool(args, "muted", true)
+                val tab = deps.browserService.updateTabFlags(tabId, muted = muted)
+                    ?: return@tool McpToolResult.error("TAB_NOT_FOUND", "标签页不存在: $tabId")
+                // 状态位之外再做一层真实静音：挂钩 HTMLMediaElement 层面，覆盖懒加载/后续新增的元素
+                val script = if (muted) {
+                    """
+                    (function(){
+                      var apply=function(){try{Array.prototype.forEach.call(document.querySelectorAll('video,audio'),function(e){try{e.muted=true;}catch(_){}});}catch(_){}};
+                      if(document.documentElement&&!window.__mcpMediaMuteObserver){
+                        window.__mcpMediaMuteObserver=new MutationObserver(apply);
+                        window.__mcpMediaMuteObserver.observe(document.documentElement,{childList:true,subtree:true});
+                      }
+                      window.__mcpMediaMuted=true;apply();return 'muted';
+                    })()
+                    """.trimIndent()
+                } else {
+                    """
+                    (function(){
+                      if(window.__mcpMediaMuteObserver){try{window.__mcpMediaMuteObserver.disconnect();}catch(_){}window.__mcpMediaMuteObserver=null;}
+                      try{Array.prototype.forEach.call(document.querySelectorAll('video,audio'),function(e){try{e.muted=false;}catch(_){}});}catch(_){}
+                      window.__mcpMediaMuted=false;return 'unmuted';
+                    })()
+                    """.trimIndent()
+                }
+                val session = deps.tabManager.getSession(tabId)
+                val mediaApplied = session?.engine?.evaluateJavascript(script) != null
+                McpToolResult.json(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("tabId", kotlinx.serialization.json.JsonPrimitive(tab.id))
+                        put("muted", kotlinx.serialization.json.JsonPrimitive(tab.isMuted))
+                        put("mediaPatched", kotlinx.serialization.json.JsonPrimitive(mediaApplied))
+                    },
+                )
             },
             f.tool(
-                "tab.pin", "固定/取消固定标签页", ToolCategory.TAB,
+                "tab.pin", "固定/取消固定标签页：写入真实状态位（tab.list 的 pinned 字段）；标题栏的固定样式由浏览器 UI 渲染，MCP 侧维护状态", ToolCategory.TAB,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("tabId" to Schemas.strSchema("标签页 ID"), "pinned" to Schemas.boolSchema("是否固定")),
+                inputSchema = Schemas.objectSchema("tabId" to Schemas.strSchema("标签页 ID（缺省用当前活动标签页）"), "pinned" to Schemas.boolSchema("是否固定（默认 true）")),
             ) { args ->
-                McpToolResult.text("标签页固定状态已切换")
+                val tabId = ToolArgs.optStr(args, "tabId") ?: deps.browserService.activeTabId.value
+                    ?: return@tool McpToolResult.error("NO_ACTIVE_TAB", "没有活动标签页")
+                val pinned = ToolArgs.bool(args, "pinned", true)
+                val tab = deps.browserService.updateTabFlags(tabId, pinned = pinned)
+                    ?: return@tool McpToolResult.error("TAB_NOT_FOUND", "标签页不存在: $tabId")
+                McpToolResult.json(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("tabId", kotlinx.serialization.json.JsonPrimitive(tab.id))
+                        put("pinned", kotlinx.serialization.json.JsonPrimitive(tab.isPinned))
+                    },
+                )
             },
             f.tool(
                 "tab.pin_session", "把当前 MCP 会话固定到指定标签页：此后该会话内所有工具的 activeSession() 都解析到这个标签页，防止多 Agent/多 Tab 切换时串到别的逆向现场（P0 上下文隔离）", ToolCategory.TAB,
@@ -636,20 +698,49 @@ object TabTools {
                 )
             },
             f.tool(
-                "tab.move", "移动标签页位置", ToolCategory.TAB,
+                "tab.move", "移动标签页位置（在标签栏顺序中插到 index 处；index 越界自动收敛到末尾）", ToolCategory.TAB,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("tabId" to Schemas.strSchema("标签页 ID"), "index" to Schemas.intSchema("目标位置")),
+                inputSchema = Schemas.objectSchema("tabId" to Schemas.strSchema("标签页 ID（缺省用当前活动标签页）"), "index" to Schemas.intSchema("目标位置（0 起）")),
             ) { args ->
-                McpToolResult.text("标签页已移动")
+                val tabId = ToolArgs.optStr(args, "tabId") ?: deps.browserService.activeTabId.value
+                    ?: return@tool McpToolResult.error("NO_ACTIVE_TAB", "没有活动标签页")
+                val index = ToolArgs.int(args, "index", 0)
+                // 修复：原实现只回「标签页已移动」，参数不读、顺序不改（假成功）
+                if (!deps.browserService.moveTab(tabId, index)) {
+                    return@tool McpToolResult.error("TAB_NOT_FOUND", "标签页不存在: $tabId")
+                }
+                McpToolResult.json(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("tabId", kotlinx.serialization.json.JsonPrimitive(tabId))
+                        put("index", kotlinx.serialization.json.JsonPrimitive(index))
+                        put(
+                            "order",
+                            kotlinx.serialization.json.JsonArray(
+                                deps.tabManager.tabs.value.map { kotlinx.serialization.json.JsonPrimitive(it.id) },
+                            ),
+                        )
+                    },
+                )
             },
             f.tool(
-                "tab.group", "创建标签组", ToolCategory.TAB,
+                "tab.group", "创建标签组并把指定标签页加入（tabIds 传 JSON 数组字符串，如 [\"tab1\",\"tab2\"]；留空则只建空组）", ToolCategory.TAB,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("name" to Schemas.strSchema("组名"), "tabIds" to Schemas.strSchema("标签页 ID 列表(JSON)")),
+                inputSchema = Schemas.objectSchema("name" to Schemas.strSchema("组名"), "tabIds" to Schemas.strSchema("标签页 ID 列表（JSON 数组字符串）")),
             ) { args ->
                 val name = ToolArgs.str(args, "name", "New Group")
-                val group = deps.tabManager.createGroup(name)
-                McpToolResult.text("已创建标签组: ${group.id} ($name)")
+                // 修复：原实现完全忽略 tabIds，只建空组（schema 声明了却没用）
+                val ids = parseTabIds(ToolArgs.str(args, "tabIds"))
+                val group = deps.tabManager.createGroup(name, ids)
+                McpToolResult.json(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("groupId", kotlinx.serialization.json.JsonPrimitive(group.id))
+                        put("name", kotlinx.serialization.json.JsonPrimitive(group.name))
+                        put(
+                            "tabIds",
+                            kotlinx.serialization.json.JsonArray(group.tabIds.map { kotlinx.serialization.json.JsonPrimitive(it) }),
+                        )
+                    },
+                )
             },
             f.tool(
                 "tab.duplicate", "复制标签页", ToolCategory.TAB,
