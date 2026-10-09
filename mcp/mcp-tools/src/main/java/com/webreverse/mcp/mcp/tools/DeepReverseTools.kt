@@ -32,7 +32,9 @@ object DeepReverseTools {
                 timeoutMs = 30_000,
                 capabilities = "memory-ssa,heap-ssa,alias-analysis,dataflow",
                 cost = 5, reliability = 91,
-                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码")),
+                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码"),
+                    required = listOf("source"),
+                ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
                 if (source.isBlank()) return@tool McpToolResult.error("MISSING_SOURCE", "source 必填")
@@ -85,6 +87,7 @@ object DeepReverseTools {
                     "source" to Schemas.strSchema("JS 源码"),
                     "wasmBase64" to Schemas.strSchema("可选 WASM Base64"),
                     "includeRuntime" to Schemas.boolSchema("合并当前 Trace"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
@@ -167,6 +170,7 @@ object DeepReverseTools {
                     "samples" to Schemas.strSchema("可选差分样本 JSON：[{\"inputs\":{\"k\":1,\"d\":2},\"observed\":\"..\"}]，observed 可省（纯差分）"),
                     "hypotheses" to Schemas.strSchema("可选假设族覆盖自动提取：[{\"name\":\"h\",\"formulas\":[{\"name\":\"f\",\"formula\":\"atob({d})\"}]}]"),
                     "includeRuntime" to Schemas.boolSchema("合并当前 Trace（默认 true）"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")

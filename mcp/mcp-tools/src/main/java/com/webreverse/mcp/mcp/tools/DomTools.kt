@@ -22,7 +22,9 @@ object DomTools {
             f.tool(
                 "dom.query", "查询单个 DOM 元素并返回其属性", ToolCategory.DOM,
                 PermissionScope.READ_DOM, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("selector" to Schemas.strSchema("CSS 选择器")),
+                inputSchema = Schemas.objectSchema("selector" to Schemas.strSchema("CSS 选择器"),
+                    required = listOf("selector"),
+                ),
             ) { args ->
                 val selector = ToolArgs.str(args, "selector")
                 if (selector.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "selector 不能为空")
@@ -117,6 +119,7 @@ object DomTools {
                 inputSchema = Schemas.objectSchema(
                     "selector" to Schemas.strSchema("CSS 选择器"),
                     "name" to Schemas.strSchema("属性名"),
+                    required = listOf("name"),
                 ),
             ) { args ->
                 val selector = ToolArgs.str(args, "selector")

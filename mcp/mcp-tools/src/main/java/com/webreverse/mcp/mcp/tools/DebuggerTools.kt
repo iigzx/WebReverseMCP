@@ -580,6 +580,7 @@ object DebuggerTools {
                 inputSchema = Schemas.objectSchema(
                     "scriptId" to Schemas.strSchema("脚本 ID（来自 debugger.list_scripts）"),
                     "maxChars" to Schemas.intSchema("最大返回字符数（默认 100000，上限 400000；minified 建议配合 js.format 格式化后分段阅读）"),
+                    required = listOf("scriptId"),
                 ),
             ) { args ->
                 val scriptId = ToolArgs.str(args, "scriptId")
@@ -609,6 +610,7 @@ object DebuggerTools {
                 inputSchema = Schemas.objectSchema(
                     "expression" to Schemas.strSchema("JS 表达式（如变量名 token）"),
                     "frame" to Schemas.intSchema("调用帧序号（默认 0，即栈顶）"),
+                    required = listOf("expression"),
                 ),
             ) { args ->
                 val expression = ToolArgs.str(args, "expression")
@@ -754,6 +756,7 @@ object DebuggerTools {
                 PermissionScope.EXECUTE_JS, RiskLevel.LOW,
                 inputSchema = Schemas.objectSchema(
                     "objectId" to Schemas.strSchema("对象 ID（来自 runtime_evaluate / get_object_properties 的嵌套值）"),
+                    required = listOf("objectId"),
                 ),
             ) { args ->
                 val objectId = ToolArgs.str(args, "objectId")
@@ -1025,6 +1028,7 @@ object DebuggerTools {
                     "selector" to Schemas.strSchema("CSS 选择器（如 #app 或 div.login-form）"),
                     "kind" to Schemas.strSchema("断点类型：subtree/attribute/removed/all（默认 all）"),
                     "pause" to Schemas.boolSchema("命中时是否 debugger 暂停（CDP attach 后为真实暂停；默认 false 仅记录）"),
+                    required = listOf("selector"),
                 ),
             ) { args ->
                 val selector = ToolArgs.str(args, "selector")
@@ -1082,6 +1086,7 @@ object DebuggerTools {
                     "eventType" to Schemas.strSchema("事件类型：click/keydown/submit/mousemove... 或 control/all"),
                     "pause" to Schemas.boolSchema("命中时是否 debugger 暂停（默认 false 仅记录）"),
                     "captureStack" to Schemas.boolSchema("记录调用堆栈（默认 true）"),
+                    required = listOf("eventType"),
                 ),
             ) { args ->
                 val eventType = ToolArgs.str(args, "eventType")
@@ -1211,6 +1216,7 @@ object DebuggerTools {
                     "query" to Schemas.strSchema("搜索文本（正则语法，必填）"),
                     "caseSensitive" to Schemas.boolSchema("区分大小写（默认 false）"),
                     "limit" to Schemas.intSchema("最多返回条数（默认 50）"),
+                    required = listOf("query"),
                 ),
             ) { args ->
                 val scriptIdOrUrl = ToolArgs.str(args, "scriptIdOrUrl")
@@ -1388,6 +1394,7 @@ object DebuggerTools {
                 inputSchema = Schemas.objectSchema(
                     "eventName" to Schemas.strSchema("事件名：click / keydown / submit / mouseover ..."),
                     "enabled" to Schemas.boolSchema("true 设置 / false 移除（默认 true）"),
+                    required = listOf("eventName"),
                 ),
             ) { args ->
                 val eventName = ToolArgs.str(args, "eventName")
@@ -1726,6 +1733,7 @@ object DebuggerTools {
                     "scriptId" to Schemas.strSchema("脚本 ID"),
                     "rename" to Schemas.boolSchema("是否把混淆标识符(_0x...)重命名为 v1/v2（默认 false）"),
                     "maxChars" to Schemas.intSchema("返回格式化文本最大字符数（默认 120000）"),
+                    required = listOf("scriptId"),
                 ),
             ) { args ->
                 val scriptId = ToolArgs.str(args, "scriptId")
@@ -1838,6 +1846,7 @@ object DebuggerTools {
                     "path" to Schemas.strSchema("快照文件路径（可选，默认取工作目录最新的 .heapsnapshot）"),
                     "limit" to Schemas.intSchema("最多返回的引用节点数（默认 50）"),
                     "timeoutSeconds" to Schemas.intSchema("未找到快照时先采集一份的取证超时（默认 60），传 0 表示不自动采集"),
+                    required = listOf("query"),
                 ),
                 timeoutMs = 180_000,
             ) { args ->

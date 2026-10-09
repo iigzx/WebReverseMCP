@@ -487,7 +487,9 @@ object NetworkTools {
             f.tool(
                 "network.import_har", "导入 HAR 文件", ToolCategory.NETWORK,
                 PermissionScope.READ_NETWORK, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("har" to Schemas.strSchema("HAR JSON 内容")),
+                inputSchema = Schemas.objectSchema("har" to Schemas.strSchema("HAR JSON 内容"),
+                    required = listOf("har"),
+                ),
             ) { args ->
                 val har = ToolArgs.str(args, "har")
                 if (har.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "har 不能为空")
@@ -668,6 +670,7 @@ object NetworkTools {
                 inputSchema = Schemas.objectSchema(
                     "requestId" to Schemas.strSchema("请求 ID（来自 network.cdp_requests 或 network.list）"),
                     "maxChars" to Schemas.intSchema("返回 body 最大字符数（默认 50000，上限 200000；超长自动截断打标）"),
+                    required = listOf("requestId"),
                 ),
             ) { args ->
                 val requestId = ToolArgs.str(args, "requestId")
@@ -827,6 +830,7 @@ object NetworkTools {
                     "method" to Schemas.strSchema("改写后的 HTTP 方法（可选）"),
                     "headers" to Schemas.strSchema("改写后的完整请求头 JSON 对象（可选，整体替换）"),
                     "postData" to Schemas.strSchema("改写后的请求体（可选）"),
+                    required = listOf("fetchId"),
                 ),
             ) { args ->
                 val fetchId = ToolArgs.str(args, "fetchId")
@@ -913,6 +917,7 @@ object NetworkTools {
                 PermissionScope.MODIFY_NETWORK, RiskLevel.MEDIUM,
                 inputSchema = Schemas.objectSchema(
                     "fetchId" to Schemas.strSchema("暂停请求 ID（必填）"),
+                    required = listOf("fetchId"),
                 ),
             ) { args ->
                 val fetchId = ToolArgs.str(args, "fetchId")

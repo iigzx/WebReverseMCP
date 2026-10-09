@@ -685,6 +685,7 @@ object ReverseEngineeringTools {
                     "sourceMapJson" to Schemas.strSchema("Source Map JSON"),
                     "line" to Schemas.intSchema("压缩后行号"),
                     "column" to Schemas.intSchema("压缩后列号"),
+                    required = listOf("sourceMapJson"),
                 ),
             ) { args ->
                 val sourceMapJson = ToolArgs.str(args, "sourceMapJson")

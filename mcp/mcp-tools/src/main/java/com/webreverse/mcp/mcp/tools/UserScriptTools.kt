@@ -40,6 +40,7 @@ object UserScriptTools {
                     "description" to Schemas.strSchema("描述"),
                     "runAt" to Schemas.strSchema("运行时机：MANUAL/PAGE_START/DOM_READY/AFTER_LOAD/BEFORE_REQUEST/AFTER_REQUEST，默认 MANUAL"),
                     "matchPatterns" to Schemas.arraySchema("匹配的 URL 模式数组，如 [\"*://*.example.com/*\"]"),
+                    required = listOf("code", "name"),
                 ),
             ) { args ->
                 val name = ToolArgs.str(args, "name")
@@ -107,7 +108,9 @@ object UserScriptTools {
             f.tool(
                 "user_script.get", "获取用户脚本详情（含代码）", ToolCategory.JAVASCRIPT,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("id" to Schemas.strSchema("脚本 ID")),
+                inputSchema = Schemas.objectSchema("id" to Schemas.strSchema("脚本 ID"),
+                    required = listOf("id"),
+                ),
             ) { args ->
                 val id = ToolArgs.str(args, "id")
                 if (id.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "id 不能为空")
@@ -139,6 +142,7 @@ object UserScriptTools {
                     "code" to Schemas.strSchema("新 JS 代码"),
                     "runAt" to Schemas.strSchema("新运行时机"),
                     "matchPatterns" to Schemas.arraySchema("新匹配 URL 模式数组"),
+                    required = listOf("id"),
                 ),
             ) { args ->
                 val id = ToolArgs.str(args, "id")
@@ -172,7 +176,9 @@ object UserScriptTools {
             f.tool(
                 "user_script.delete", "删除用户脚本", ToolCategory.JAVASCRIPT,
                 PermissionScope.EXECUTE_JS, RiskLevel.MEDIUM,
-                inputSchema = Schemas.objectSchema("id" to Schemas.strSchema("脚本 ID")),
+                inputSchema = Schemas.objectSchema("id" to Schemas.strSchema("脚本 ID"),
+                    required = listOf("id"),
+                ),
             ) { args ->
                 val id = ToolArgs.str(args, "id")
                 if (id.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "id 不能为空")
@@ -189,6 +195,7 @@ object UserScriptTools {
                 inputSchema = Schemas.objectSchema(
                     "id" to Schemas.strSchema("脚本 ID"),
                     "enabled" to Schemas.boolSchema("是否启用"),
+                    required = listOf("id"),
                 ),
             ) { args ->
                 val id = ToolArgs.str(args, "id")

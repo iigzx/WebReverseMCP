@@ -172,7 +172,9 @@ object EnhancedAnalysisTools {
                 timeoutMs = 15_000,
                 capabilities = "parser,es-module,import-export,dependency",
                 cost = 2, reliability = 88,
-                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码（ESModule 语法）")),
+                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码（ESModule 语法）"),
+                    required = listOf("source"),
+                ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
                 if (source.isBlank()) return@tool McpToolResult.error("MISSING_SOURCE", "source 必填")
@@ -233,6 +235,7 @@ object EnhancedAnalysisTools {
                     "source" to Schemas.strSchema("JS 源码（必填）"),
                     "runtimeTaint" to Schemas.strSchema("运行时污点标签 JSON 数组，每条 {\"tagId\":\"t1\",\"sourceLabel\":\"..\",\"sinkLabel\":\"..\",\"path\":[{\"kind\":\"hop\",\"label\":\"fnX\",\"seq\":0}]}（可选）"),
                     "runtimeSeverity" to Schemas.enumSchema("运行时污点严重级别", "CRITICAL", "HIGH", "MEDIUM", "LOW"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")

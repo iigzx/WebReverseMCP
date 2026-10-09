@@ -397,6 +397,7 @@ object ReverseDiscoveryTools {
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("JS 源码（必填；可用 page.eval 拿到，或用工具从脚本注入）"),
                     "includeShim" to Schemas.boolSchema("是否返回生成的 shim 引导脚本（默认 true）"),
+                    required = listOf("source"),
                 ),
                 timeoutMs = 30_000,
             ) { args ->
@@ -549,6 +550,7 @@ object ReverseDiscoveryTools {
                     "captured" to Schemas.strSchema("可选：真实浏览器捕获值（JSON 对象字符串，取自 reverse.capture_environment）"),
                     "maxBackfillRounds" to Schemas.intSchema("可选：自动回填轮次上限（默认 3，0 表示不回填）"),
                     "timeoutMs" to Schemas.intSchema("可选：单次执行超时（毫秒，默认 120000）"),
+                    required = listOf("source"),
                 ),
                 timeoutMs = 300_000,
             ) { args ->
@@ -626,6 +628,7 @@ object ReverseDiscoveryTools {
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("待改写的 JS 源码（必填；取命中的脚本源码即可）"),
                     "url" to Schemas.strSchema("脚本来源 URL，用于标记拦截规则"),
+                    required = listOf("source"),
                 ),
                 timeoutMs = 30_000,
             ) { args ->

@@ -58,6 +58,7 @@ object DynamicTools {
                     "captureArgs" to Schemas.boolSchema("记录参数（默认 true）"),
                     "captureReturn" to Schemas.boolSchema("记录返回值（默认 true）"),
                     "captureStack" to Schemas.boolSchema("记录调用堆栈（默认 false，开销较大）"),
+                    required = listOf("target"),
                 ),
             ) { args ->
                 val target = ToolArgs.str(args, "target")
@@ -90,6 +91,7 @@ object DynamicTools {
                 PermissionScope.DEBUG_SCRIPT, RiskLevel.MEDIUM,
                 inputSchema = Schemas.objectSchema(
                     "target" to Schemas.strSchema("函数点路径"),
+                    required = listOf("target"),
                 ),
             ) { args ->
                 val target = ToolArgs.str(args, "target")
@@ -106,6 +108,7 @@ object DynamicTools {
                 PermissionScope.DEBUG_SCRIPT, RiskLevel.MEDIUM,
                 inputSchema = Schemas.objectSchema(
                     "target" to Schemas.strSchema("对象点路径（如 window.user / app.config；须为 object）"),
+                    required = listOf("target"),
                 ),
             ) { args ->
                 val target = ToolArgs.str(args, "target")
@@ -134,6 +137,7 @@ object DynamicTools {
                 inputSchema = Schemas.objectSchema(
                     "target" to Schemas.strSchema("对象点路径（如 window.crypto / 某命名空间对象）"),
                     "maxMethods" to Schemas.intSchema("最多包装方法数（默认 30）"),
+                    required = listOf("target"),
                 ),
             ) { args ->
                 val target = ToolArgs.str(args, "target")
@@ -293,6 +297,7 @@ object DynamicTools {
                     "match" to Schemas.strSchema("匹配：子串，或 /regex/flags 形式"),
                     "action" to Schemas.strSchema("动作：log（默认）/ block / replace"),
                     "replacement" to Schemas.strSchema("replace 动作的替换代码"),
+                    required = listOf("match"),
                 ),
             ) { args ->
                 val session = deps.activeSession()

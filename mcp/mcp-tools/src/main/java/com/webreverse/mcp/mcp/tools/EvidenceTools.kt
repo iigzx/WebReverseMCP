@@ -93,6 +93,7 @@ object EvidenceTools {
                     "title" to Schemas.strSchema("证据标题（必填）"),
                     "kind" to Schemas.strSchema("证据类别（如 conclusion/observation）"),
                     "data" to Schemas.strSchema("附加数据 key=value;key=value"),
+                    required = listOf("title"),
                 ),
             ) { args ->
                 val title = ToolArgs.str(args, "title")

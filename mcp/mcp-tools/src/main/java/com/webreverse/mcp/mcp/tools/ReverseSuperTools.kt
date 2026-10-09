@@ -92,6 +92,7 @@ object ReverseSuperTools {
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("JS 源码"),
                     "topN" to Schemas.intSchema("热点函数数量，默认 20"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
@@ -164,6 +165,7 @@ object ReverseSuperTools {
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("JS 源码"),
                     "topN" to Schemas.intSchema("返回的高价值目标数，默认 60"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
@@ -224,6 +226,7 @@ object ReverseSuperTools {
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("JS 源码（离线，可直接使用 file.read 拿到的内容）"),
                     "endpointContains" to Schemas.strSchema("关注端点关键词（如 sign/wdf），用于聚焦"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
@@ -609,6 +612,7 @@ object ReverseSuperTools {
                 cost = 8, reliability = 94,
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("JS 源码"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
@@ -665,6 +669,7 @@ object ReverseSuperTools {
                     "source" to Schemas.strSchema("JS 源码"),
                     "validationConfidence" to Schemas.doubleSchema("真实样本验证置信度 0..1"),
                     "traceCoverage" to Schemas.doubleSchema("运行时 trace 覆盖率 0..1"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")

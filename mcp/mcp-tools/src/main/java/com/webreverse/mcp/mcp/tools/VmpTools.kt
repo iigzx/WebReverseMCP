@@ -820,6 +820,7 @@ object VmpTools {
                     "opcode" to Schemas.strSchema("待验证的 opcode（如 '23' 或 '0x17'）"),
                     "samples" to Schemas.strSchema("样本 JSON 数组，每条形如 [{\"a\":123,\"b\":456,\"out\":579}, ...]（前两个数值字段为输入，最后数值字段为输出）"),
                     "candidates" to Schemas.strSchema("候选语义列表，逗号分隔（默认 ADD,SUB,XOR,OR,AND,MUL,SHL,SHR,ROTL,MOD）"),
+                    required = listOf("opcode"),
                 ),
             ) { args ->
                 val opcode = ToolArgs.str(args, "opcode")
@@ -883,6 +884,7 @@ object VmpTools {
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("JS/JSVMP 源码"),
                     "candidateIndex" to Schemas.intSchema("候选派发索引，默认 0"),
+                    required = listOf("source"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")

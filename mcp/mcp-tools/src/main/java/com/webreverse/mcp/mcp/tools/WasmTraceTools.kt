@@ -150,6 +150,7 @@ object WasmTraceTools {
                     "memAddr" to Schemas.intSchema("内存快照起始地址（与 memLen 配合；不填则不做区间快照）", min = 0),
                     "memLen" to Schemas.intSchema("内存快照长度（默认 256，最大 65536）", min = 1, max = 65536),
                     "cap" to Schemas.intSchema("记录条数上限（默认 200）", min = 1, max = 5000),
+                    required = listOf("fn"),
                 ),
             ) { args ->
                 val index = ToolArgs.int(args, "index", 0)

@@ -226,6 +226,7 @@ object BrowserTools {
                     "url" to Schemas.strSchema("要下载的文件 URL"),
                     "filename" to Schemas.strSchema("保存文件名（默认从 URL 推断）"),
                     "mimeType" to Schemas.strSchema("文件 MIME 类型（可选）"),
+                    required = listOf("url"),
                 ),
             ) { args ->
                 val url = ToolArgs.str(args, "url")
@@ -907,6 +908,7 @@ object TabTools {
                 PermissionScope.CONTROL_MCP, RiskLevel.MEDIUM,
                 inputSchema = Schemas.objectSchema(
                     "tabId" to Schemas.strSchema("要固定的标签页 ID（tab.list 获取）"),
+                    required = listOf("tabId"),
                 ),
             ) { args ->
                 val tabId = ToolArgs.str(args, "tabId")

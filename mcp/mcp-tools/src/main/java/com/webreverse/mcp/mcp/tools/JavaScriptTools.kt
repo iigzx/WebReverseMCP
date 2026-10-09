@@ -32,6 +32,7 @@ object JavaScriptTools {
                 inputSchema = Schemas.objectSchema(
                     "expression" to Schemas.strSchema("要执行的 JS 表达式（支持多语句，返回最后一个表达式的值）"),
                     "awaitPromise" to Schemas.boolSchema("是否等待 Promise（默认 true；传 false 走同步路径，不强等 thenable）"),
+                    required = listOf("expression"),
                 ),
             ) { args ->
                 val expression = ToolArgs.str(args, "expression")
@@ -52,7 +53,9 @@ object JavaScriptTools {
             f.tool(
                 "js.evaluate_async", "异步执行 JavaScript（支持 await，等待 Promise 结算后返回结果）", ToolCategory.JAVASCRIPT,
                 PermissionScope.EXECUTE_JS, RiskLevel.HIGH, timeoutMs = 45_000,
-                inputSchema = Schemas.objectSchema("expression" to Schemas.strSchema("要执行的 JS 表达式（可用 await）")),
+                inputSchema = Schemas.objectSchema("expression" to Schemas.strSchema("要执行的 JS 表达式（可用 await）"),
+                    required = listOf("expression"),
+                ),
             ) { args ->
                 val expression = ToolArgs.str(args, "expression")
                 if (expression.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "expression 不能为空")
@@ -165,7 +168,9 @@ object JavaScriptTools {
             f.tool(
                 "js.parse_ast", "解析 JavaScript 源码为 AST/Token 结构", ToolCategory.JAVASCRIPT,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码")),
+                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码"),
+                    required = listOf("source"),
+                ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
                 if (source.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "source 不能为空")
@@ -216,7 +221,9 @@ object JavaScriptTools {
             f.tool(
                 "js.analyze_ast", "分析 JS 源码提取字符串/标识符/URL/变量", ToolCategory.JAVASCRIPT,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码")),
+                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码"),
+                    required = listOf("source"),
+                ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
                 if (source.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "source 不能为空")
@@ -253,7 +260,9 @@ object JavaScriptTools {
             f.tool(
                 "js.ast", "结构化 AST 解析：递归下降解析为 AST（函数/变量/if/for/while/switch/return/调用/成员/赋值/二元），输出函数清单与语句树", ToolCategory.JAVASCRIPT,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码")),
+                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码"),
+                    required = listOf("source"),
+                ),
                 timeoutMs = 60_000,
             ) { args ->
                 val source = ToolArgs.str(args, "source")
@@ -295,7 +304,9 @@ object JavaScriptTools {
             f.tool(
                 "js.beautify", "美化格式化 JS 源码（词法级格式化：字符串/模板/正则/注释安全，不破坏语义；混淆代码建议用 js.format）", ToolCategory.JAVASCRIPT,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码")),
+                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码"),
+                    required = listOf("source"),
+                ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
                 if (source.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "source 不能为空")
@@ -438,7 +449,9 @@ object JavaScriptTools {
             f.tool(
                 "js.detect_obfuscation", "检测 JS 混淆程度并输出报告", ToolCategory.JAVASCRIPT,
                 PermissionScope.READ_PAGE, RiskLevel.LOW,
-                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码")),
+                inputSchema = Schemas.objectSchema("source" to Schemas.strSchema("JS 源码"),
+                    required = listOf("source"),
+                ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")
                 if (source.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "source 不能为空")
@@ -494,6 +507,7 @@ object JavaScriptTools {
                 inputSchema = Schemas.objectSchema(
                     "source" to Schemas.strSchema("JS 源码"),
                     "pattern" to Schemas.strSchema("搜索模式（支持正则）"),
+                    required = listOf("pattern"),
                 ),
             ) { args ->
                 val source = ToolArgs.str(args, "source")

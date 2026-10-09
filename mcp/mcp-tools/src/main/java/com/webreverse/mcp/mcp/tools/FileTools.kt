@@ -91,6 +91,7 @@ object FileTools {
                 PermissionScope.WRITE_FILE, RiskLevel.MEDIUM,
                 inputSchema = Schemas.objectSchema(
                     "path" to Schemas.strSchema("新的工作目录绝对路径"),
+                    required = listOf("path"),
                 ),
             ) { args ->
                 val path = ToolArgs.str(args, "path")
@@ -750,6 +751,7 @@ object FileTools {
                     "recursive" to Schemas.boolSchema("目录递归（默认 true）"),
                     "maxResults" to Schemas.intSchema("最多返回匹配数（默认 50）"),
                     "contextChars" to Schemas.intSchema("超长行时匹配点前后展示的字符窗口（默认 120）"),
+                    required = listOf("query"),
                 ),
             ) { args ->
                 val root = resolveFile(deps, ToolArgs.str(args, "path"))

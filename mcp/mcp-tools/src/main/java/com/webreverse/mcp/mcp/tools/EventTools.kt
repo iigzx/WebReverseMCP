@@ -89,6 +89,7 @@ object EventTools {
                 inputSchema = Schemas.objectSchema(
                     "event" to Schemas.strSchema("事件类型，如 network.request / debugger.paused / console.error"),
                     "timeoutMs" to Schemas.intSchema("订阅超时"),
+                    required = listOf("event"),
                 ),
             ) { args ->
                 val event = ToolArgs.str(args, "event")
@@ -117,6 +118,7 @@ object EventTools {
                     "event" to Schemas.strSchema("事件类型"),
                     "timeoutMs" to Schemas.intSchema("超时毫秒"),
                     "filter" to Schemas.strSchema("过滤条件（URL 片段等）"),
+                    required = listOf("event"),
                 ),
             ) { args ->
                 val event = ToolArgs.str(args, "event")

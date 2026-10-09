@@ -32,6 +32,9 @@ jobs:
       - name: Static audit (Kotlin JSON qualified names)
         continue-on-error: true
         run: python3 .github/ci/audit_kotlin_json.py .
+      - name: Static audit (missing required args)
+        continue-on-error: true
+        run: python3 .github/ci/audit_required_args.py .
       - name: Accept SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
       - name: Run JVM unit tests

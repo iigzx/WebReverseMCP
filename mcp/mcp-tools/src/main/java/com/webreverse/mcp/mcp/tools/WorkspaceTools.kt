@@ -54,6 +54,7 @@ object WorkspaceTools {
                     "name" to Schemas.strSchema("工作区名称"),
                     "description" to Schemas.strSchema("描述"),
                     "targetUrl" to Schemas.strSchema("目标 URL"),
+                    required = listOf("name"),
                 ),
             ) { args ->
                 val name = ToolArgs.str(args, "name")

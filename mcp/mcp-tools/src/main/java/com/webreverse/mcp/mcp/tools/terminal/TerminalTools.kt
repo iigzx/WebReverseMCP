@@ -104,6 +104,7 @@ object TerminalTools {
                     "command" to Schemas.strSchema("要执行的 shell 命令（支持管道/重定向/&& 等）"),
                     "workingDir" to Schemas.strSchema("工作目录（默认统一存储目录，与 file.* 一致）"),
                     "timeoutMs" to Schemas.intSchema("超时毫秒（默认 60000，最大 300000）"),
+                    required = listOf("command"),
                 ),
             ) { args ->
                 val command = ToolArgs.str(args, "command")
@@ -196,6 +197,7 @@ object TerminalTools {
                     "code" to Schemas.strSchema("Python 源码"),
                     "args" to Schemas.arraySchema("命令行参数（可选）"),
                     "timeoutMs" to Schemas.intSchema("超时毫秒（默认 120000）"),
+                    required = listOf("code"),
                 ),
             ) { args ->
                 val code = ToolArgs.str(args, "code")
@@ -220,6 +222,7 @@ object TerminalTools {
                     "path" to Schemas.strSchema("脚本文件路径（绝对路径，或相对路径——按 file 工作目录 → 终端 HOME 顺序解析）"),
                     "args" to Schemas.arraySchema("命令行参数（可选）"),
                     "timeoutMs" to Schemas.intSchema("超时毫秒（默认 120000）"),
+                    required = listOf("path"),
                 ),
             ) { args ->
                 val path = ToolArgs.str(args, "path")
