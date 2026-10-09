@@ -73,7 +73,15 @@ class UniversalTargetProfiler {
         val wasm = Regex("""(?i)WebAssembly|\.wasm\b|wasm[-_.]bindgen|__wbindgen""").findAll(src).count()
         if (wasm > 0 || network.any { it.url.endsWith(".wasm", true) }) add(Kind.WASM, (60 + wasm.coerceAtMost(20) * 2.0), 0.96, "WASM boundary hits=$wasm", actions = listOf("wasm.dump_module", "wasm.disassemble_func", "reverse.wasm_provenance", "reverse.js_wasm_provenance_chain"))
 
-        val jsvmp = Regex("""(?i)dispatcher|dispatchTable|opcode|bytecode|programCounter|stackPointer|handlerTable|\bcase\s+0x[0-9a-f]+\s*:""").findAll(src).count()
+        // JSVMP 判定（阈值 2）：
+        // - VM 词表（dispatcher/opcode/bytecode/...）每命中一处记 2 分；
+        // - 十六进制 case 派发（`case 0x12:`，opcode 表的典型形态）单独出现即记 2 分。
+        // 修复：原实现把两者混在一个计数里、各记 1 分并统一要求 >= 2，于是
+        // 「一个 hex-case 派发」这种强信号被阈值吞掉（mcp-tools 的 VM 夹具判漏，
+        // UniversalReverseToolsTest 实测失败）。普通十进制 switch 仍不命中。
+        val vmWords = Regex("""(?i)dispatcher|dispatchTable|opcode|bytecode|programCounter|stackPointer|handlerTable""").findAll(src).count()
+        val hexCaseDispatch = Regex("""\bcase\s+0x[0-9a-f]+\s*:""", RegexOption.IGNORE_CASE).containsMatchIn(src)
+        val jsvmp = vmWords * 2 + (if (hexCaseDispatch) 2 else 0)
         if (jsvmp >= 2) add(Kind.JSVMP, (40 + jsvmp.coerceAtMost(30) * 2.0), 0.83, "VM-like dispatcher markers=$jsvmp", actions = listOf("vmp.verify", "reverse.jsvmp_vm_ssa", "reverse.trace"))
 
         val anti = Regex("""(?i)\bdebugger\b|devtools|disableDevtools|console\.(clear|debug)|toString\s*\(.*match|Function\s*\(\s*['"]debugger""").findAll(src).count()
