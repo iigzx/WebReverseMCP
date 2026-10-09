@@ -5,6 +5,8 @@ import com.webreverse.mcp.core.common.permission.RiskLevel
 import com.webreverse.mcp.core.mcp.McpTool
 import com.webreverse.mcp.core.mcp.McpToolResult
 import com.webreverse.mcp.core.mcp.ToolCategory
+import com.webreverse.mcp.browser.engine.BrowserEngine
+import com.webreverse.mcp.core.mcp.McpContent
 import com.webreverse.mcp.core.common.util.Redactor
 
 /** Browser Tools：浏览器导航与页面操作 */
@@ -112,22 +114,49 @@ object BrowserTools {
                 )
             },
             f.tool(
-                "browser.screenshot", "截取当前页面（支持视口/全页/元素截图）", ToolCategory.BROWSER,
+                "browser.screenshot",
+                "截取当前页面。默认视口截图；fullPage=true 截整页（CDP captureBeyondViewport）；selector=CSS 选择器 截单个元素（按元素在文档中的坐标裁剪）。" +
+                    "fullPage/selector 需要 CDP（未 attach 会先自动 attach）；CDP 不可用时降级为视口截图，并在 structured 里给 degraded=true 与补救动作",
+                ToolCategory.BROWSER,
                 PermissionScope.SCREENSHOT, RiskLevel.MEDIUM, supportsImage = true,
                 inputSchema = Schemas.objectSchema(
-                    "format" to Schemas.strSchema("png/jpeg"),
-                    "fullPage" to Schemas.boolSchema("是否全页截图"),
-                    "selector" to Schemas.strSchema("元素选择器"),
+                    "format" to Schemas.strSchema("png/jpeg（默认 png）"),
+                    "fullPage" to Schemas.boolSchema("是否全页截图（默认 false = 仅视口；需 CDP）"),
+                    "selector" to Schemas.strSchema("元素选择器（如 #app、div.login-form）；与 fullPage 同时给时以 selector 为准；需 CDP"),
                 ),
             ) { args ->
                 val session = deps.activeSession()
+                val format = if (ToolArgs.str(args, "format").equals("jpeg", ignoreCase = true)) "jpeg" else "png"
+                val fullPage = ToolArgs.bool(args, "fullPage", false)
+                val selector = ToolArgs.optStr(args, "selector")?.takeIf { it.isNotBlank() }
+
+                if (fullPage || selector != null) {
+                    // 修复：fullPage / selector 此前声明了却从不读取（"全页/元素截图"不成立）。
+                    // 走 CDP Page.captureScreenshot（captureBeyondViewport + clip），
+                    // 未 attach 时先幂等 attach 一次，避免让 AI 多走一轮。
+                    if (deps.debuggerManager.backend != "cdp") {
+                        runCatching { deps.debuggerManager.attach(session.engine) }
+                    }
+                    captureRegionViaCdp(deps, session.engine, format, fullPage, selector)?.let { return@tool it }
+                    val bitmap = session.engine.screenshot()
+                        ?: return@tool McpToolResult.error(
+                            "SCREENSHOT_FAILED",
+                            "截图失败：CDP 与视口两条路径都不可用",
+                        )
+                    return@tool viewportShotResult(
+                        bitmap, format,
+                        buildJsonObject {
+                            put("degraded", JsonPrimitive(true))
+                            put("requested", JsonPrimitive(if (selector != null) "selector" else "fullPage"))
+                            put("reason", JsonPrimitive("CDP 不可用（未 attach 或会话建立失败）"))
+                            put("remedy", JsonPrimitive("先 debugger(action=\"attach\")，再重试本次调用即可拿到全页/元素截图"))
+                        },
+                    )
+                }
+
                 val bitmap = session.engine.screenshot()
                     ?: return@tool McpToolResult.error("SCREENSHOT_FAILED", "截图失败")
-                val stream = java.io.ByteArrayOutputStream()
-                val format = if (ToolArgs.str(args, "format") == "jpeg") android.graphics.Bitmap.CompressFormat.JPEG else android.graphics.Bitmap.CompressFormat.PNG
-                bitmap.compress(format, 90, stream)
-                val base64 = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
-                McpToolResult.image(base64, if (format == android.graphics.Bitmap.CompressFormat.JPEG) "image/jpeg" else "image/png")
+                viewportShotResult(bitmap, format, null)
             },
             f.tool(
                 "browser.pdf", "将当前页面导出为 PDF（全页分页渲染，保存到工作目录）", ToolCategory.BROWSER,
@@ -204,8 +233,14 @@ object BrowserTools {
                 val context = deps.browserService.appContext()
                 val requested = ToolArgs.optStr(args, "filename")?.takeIf { it.isNotBlank() }
                 val inferred = url.substringAfterLast('/').substringBefore('?').takeIf { it.isNotBlank() }
-                val filename = (requested ?: inferred ?: "download-${System.currentTimeMillis()}")
-                    .replace("/", "_").replace("\\", "_")
+                // mimeType：此前声明了却从不读取。现在用于——文件名无扩展名时按 MIME 补扩展名
+                // （AI 常直接把二进制 URL 存成无后缀文件，落盘后打不开）、并在结果里回显。
+                val mimeHint = ToolArgs.optStr(args, "mimeType")?.takeIf { it.isNotBlank() }
+                val filename = applyMimeExtension(
+                    (requested ?: inferred ?: "download-${System.currentTimeMillis()}")
+                        .replace("/", "_").replace("\\", "_"),
+                    mimeHint,
+                )
 
                 // data: URI 支持：AI Agent 可直接把文本/脚本内容落盘（无需网络）
                 if (url.startsWith("data:", ignoreCase = true)) {
@@ -239,6 +274,9 @@ object BrowserTools {
                                 put("path", kotlinx.serialization.json.JsonPrimitive(file.absolutePath))
                                 put("sizeBytes", kotlinx.serialization.json.JsonPrimitive(file.length()))
                                 put("directory", kotlinx.serialization.json.JsonPrimitive("工作目录"))
+                                if (mimeHint != null) {
+                                    put("mimeType", kotlinx.serialization.json.JsonPrimitive(mimeHint))
+                                }
                             },
                         )
                     }
@@ -386,6 +424,47 @@ object BrowserTools {
     /** 上传文件大小上限：50MB（防止一次性 base64 撑爆内存） */
     private const val MAX_UPLOAD_BYTES = 50L * 1024 * 1024
 
+    /**
+     * 单张截图的 base64 字符上限（≈9 MB 原始字节）。
+     * 超出后用 jpeg(70) 自动重截一次——整页 PNG 动辄几十 MB，直接塞给客户端
+     * 会挤爆响应预算（服务端 MAX_TOOL_RESPONSE_CHARS 保护也会先触发）。
+     */
+    private const val MAX_SCREENSHOT_B64_CHARS = 12_000_000
+
+    /**
+     * 文件名无扩展名时，按 MIME 补一个（`browser.download` 的 mimeType 参数实现）。
+     * 只补不覆盖：文件名已带扩展名时原样返回，避免破坏 AI 显式指定的名字。
+     */
+    private fun applyMimeExtension(filename: String, mime: String?): String {
+        if (mime == null) return filename
+        val base = filename.substringBefore('?')
+        if (base.substringAfterLast('/', base).contains('.')) return filename
+        val ext = when (mime.substringBefore(';').trim().lowercase()) {
+            "image/png" -> "png"
+            "image/jpeg", "image/jpg" -> "jpg"
+            "image/gif" -> "gif"
+            "image/webp" -> "webp"
+            "image/svg+xml" -> "svg"
+            "application/pdf" -> "pdf"
+            "application/json" -> "json"
+            "application/wasm" -> "wasm"
+            "application/zip" -> "zip"
+            "application/gzip" -> "gz"
+            "text/html" -> "html"
+            "text/css" -> "css"
+            "text/plain" -> "txt"
+            "text/javascript", "application/javascript" -> "js"
+            "application/xml", "text/xml" -> "xml"
+            "audio/mpeg" -> "mp3"
+            "audio/mp4" -> "m4a"
+            "audio/flac" -> "flac"
+            "video/mp4" -> "mp4"
+            "video/webm" -> "webm"
+            else -> null
+        } ?: return filename
+        return "$filename.$ext"
+    }
+
     /** 解析 upload path 参数：绝对路径原样；相对路径基于工作目录并强制约束在工作区内 */
     private fun resolveUploadFile(deps: ToolDependencies, rawPath: String): java.io.File {
         val trimmed = rawPath.trim()
@@ -448,6 +527,166 @@ object BrowserTools {
         }
 
     /** 解码 data: URI，返回 (字节, mime)。支持 data:[mime][;base64],payload 两种格式 */
+    /**
+     * 视口截图 → MCP image 结果。
+     * [extra] 非空时作为附加字段并入 structuredContent（用于降级时如实标注原因与补救动作）。
+     */
+    private fun viewportShotResult(
+        bitmap: android.graphics.Bitmap,
+        format: String,
+        extra: kotlinx.serialization.json.JsonObject?,
+    ): McpToolResult {
+        val stream = java.io.ByteArrayOutputStream()
+        val isJpeg = format == "jpeg"
+        bitmap.compress(
+            if (isJpeg) android.graphics.Bitmap.CompressFormat.JPEG else android.graphics.Bitmap.CompressFormat.PNG,
+            90,
+            stream,
+        )
+        val bytes = stream.toByteArray()
+        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        val mime = if (isJpeg) "image/jpeg" else "image/png"
+        val structured = kotlinx.serialization.json.buildJsonObject {
+            put("mode", kotlinx.serialization.json.JsonPrimitive("viewport"))
+            put("mimeType", kotlinx.serialization.json.JsonPrimitive(mime))
+            put("width", kotlinx.serialization.json.JsonPrimitive(bitmap.width))
+            put("height", kotlinx.serialization.json.JsonPrimitive(bitmap.height))
+            put("bytes", kotlinx.serialization.json.JsonPrimitive(bytes.size))
+            extra?.forEach { (k, v) -> put(k, v) }
+        }
+        return McpToolResult(
+            content = listOf(McpContent(type = "image", mimeType = mime, data = base64)),
+            structuredContent = structured,
+        )
+    }
+
+    /**
+     * CDP 精确区域截图（fullPage = 整页 / selector = 元素）。
+     * 不可用时返回 null（调用方退回视口截图）。
+     * 选择器未匹配时返回错误结果（此时不应退回视口——那会让 AI 误以为截图成功）。
+     */
+    private suspend fun captureRegionViaCdp(
+        deps: ToolDependencies,
+        engine: BrowserEngine,
+        format: String,
+        fullPage: Boolean,
+        selector: String?,
+    ): McpToolResult? {
+        val raw = engine.evaluateJavascript(pageMetricsScript(selector)) ?: return null
+        val metrics = RuntimeCaptureBridge.parseJsObject(raw) ?: return null
+        if (selector != null && metrics["hasMatch"]?.toString() != "true") {
+            return McpToolResult.error(
+                "SELECTOR_NOT_FOUND",
+                "选择器未匹配到元素: $selector。可先用 dom(action=\"query\", selector=\"$selector\") 确认元素存在（或在 iframe 内——需 frame(action=\"list\") 定位）",
+            )
+        }
+        val clip = if (fullPage) {
+            val page = metrics["page"] as? kotlinx.serialization.json.JsonObject ?: return null
+            val w = page["w"]?.toString()?.toDoubleOrNull() ?: return null
+            val h = page["h"]?.toString()?.toDoubleOrNull() ?: return null
+            if (w <= 0 || h <= 0) return null
+            clipOf(0.0, 0.0, w, h)
+        } else {
+            val rect = metrics["rect"] as? kotlinx.serialization.json.JsonObject ?: return null
+            val x = rect["x"]?.toString()?.toDoubleOrNull() ?: return null
+            val y = rect["y"]?.toString()?.toDoubleOrNull() ?: return null
+            val w = rect["w"]?.toString()?.toDoubleOrNull() ?: return null
+            val h = rect["h"]?.toString()?.toDoubleOrNull() ?: return null
+            if (w <= 0 || h <= 0) {
+                return McpToolResult.error("ZERO_SIZE_ELEMENT", "元素可见尺寸为 0（可能 display:none / 未渲染）")
+            }
+            clipOf(x, y, w, h)
+        }
+        val singlePass = clip["width"]?.toString()?.toDoubleOrNull().let { w ->
+            val h = clip["height"]?.toString()?.toDoubleOrNull() ?: 0.0
+            (w ?: 0.0) * h
+        }
+        if (singlePass > 60_000_000) {
+            return McpToolResult.error(
+                "REGION_TOO_LARGE",
+                "目标区域过大（${singlePass.toLong()} 平方 CSS 像素），超出单张截图上限。请用 selector 缩小范围，或分段截取（配合 browser.download 落盘）",
+            )
+        }
+        var res = deps.debuggerManager.cdpCall(engine, "Page.captureScreenshot", shotParams(format, clip)) ?: return null
+        var data = (res["data"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() } ?: return null
+        var usedFormat = format
+        // 体积防护：整页 PNG 容易几十 MB（base64 再膨胀 1/3），超出 MCP 舒适区时自动换 jpeg 重截一次
+        if (data.length > MAX_SCREENSHOT_B64_CHARS) {
+            res = deps.debuggerManager.cdpCall(engine, "Page.captureScreenshot", shotParams("jpeg", clip, quality = 70))
+            val smaller = (res?.get("data") as? kotlinx.serialization.json.JsonPrimitive)?.content
+            if (!smaller.isNullOrBlank()) {
+                data = smaller
+                usedFormat = "jpeg"
+            }
+        }
+        val structured = kotlinx.serialization.json.buildJsonObject {
+            put("mode", kotlinx.serialization.json.JsonPrimitive(if (selector != null) "selector" else "fullPage"))
+            put("selector", kotlinx.serialization.json.JsonPrimitive(selector ?: ""))
+            put("mimeType", kotlinx.serialization.json.JsonPrimitive("image/$usedFormat"))
+            put("bytes", kotlinx.serialization.json.JsonPrimitive(data.length * 3 / 4))
+            put("clip", clip)
+            if (usedFormat != format) put("downgraded", kotlinx.serialization.json.JsonPrimitive(true))
+        }
+        return McpToolResult(
+            content = listOf(McpContent(type = "image", mimeType = "image/$usedFormat", data = data)),
+            structuredContent = structured,
+        )
+    }
+
+    /** Page.captureScreenshot 参数 */
+    private fun shotParams(
+        format: String,
+        clip: kotlinx.serialization.json.JsonObject,
+        quality: Int = 80,
+    ): kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.buildJsonObject {
+        put("format", kotlinx.serialization.json.JsonPrimitive(format))
+        put("captureBeyondViewport", kotlinx.serialization.json.JsonPrimitive(true))
+        put("clip", clip)
+        if (format == "jpeg") put("quality", kotlinx.serialization.json.JsonPrimitive(quality))
+    }
+
+    private fun clipOf(x: Double, y: Double, w: Double, h: Double): kotlinx.serialization.json.JsonObject =
+        kotlinx.serialization.json.buildJsonObject {
+            put("x", kotlinx.serialization.json.JsonPrimitive(x))
+            put("y", kotlinx.serialization.json.JsonPrimitive(y))
+            put("width", kotlinx.serialization.json.JsonPrimitive(w))
+            put("height", kotlinx.serialization.json.JsonPrimitive(h))
+            put("scale", kotlinx.serialization.json.JsonPrimitive(1))
+        }
+
+    /**
+     * 页面几何度量脚本：返回文档尺寸（整页）与目标元素在**文档坐标系**中的矩形。
+     * 坐标系说明：CDP captureBeyondViewport 的 clip 用文档坐标（含滚动偏移），
+     * 所以这里统一加上 scrollX/scrollY。
+     */
+    private fun pageMetricsScript(selector: String?): String {
+        val q = if (selector == null) "null" else kotlinx.serialization.json.JsonPrimitive(selector).toString()
+        return """
+            (function(){
+              try {
+                var q = $q;
+                var el = q ? document.querySelector(q) : null;
+                if (q && !el) return JSON.stringify({hasMatch:false});
+                var r = el ? el.getBoundingClientRect() : null;
+                var d = document.documentElement || {};
+                var b = document.body || {};
+                var sx = window.scrollX || d.scrollLeft || 0;
+                var sy = window.scrollY || d.scrollTop || 0;
+                var vw = window.innerWidth || d.clientWidth || 0;
+                var vh = window.innerHeight || d.clientHeight || 0;
+                var pw = Math.max(d.scrollWidth||0, b.scrollWidth||0, vw);
+                var ph = Math.max(d.scrollHeight||0, b.scrollHeight||0, vh);
+                return JSON.stringify({
+                  hasMatch: !!el,
+                  rect: r ? {x: r.left + sx, y: r.top + sy, w: r.width, h: r.height} : null,
+                  page: {w: pw, h: ph},
+                  viewport: {w: vw, h: vh}
+                });
+              } catch (e) { return JSON.stringify({hasMatch:false, error: String(e)}); }
+            })()
+        """.trimIndent()
+    }
+
     private fun decodeDataUri(uri: String): Pair<ByteArray, String>? {
         return try {
             val headerEnd = uri.indexOf(',', 5)

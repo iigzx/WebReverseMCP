@@ -27,20 +27,20 @@ object JavaScriptTools {
         val f = ToolFactory(deps)
         return listOf(
             f.tool(
-                "js.evaluate", "在当前页面执行 JavaScript 表达式（awaitPromise=true 时等待 Promise 结算）", ToolCategory.JAVASCRIPT,
+                "js.evaluate", "在当前页面执行 JavaScript 表达式。★ 默认智能等待：表达式返回 Promise/thenable 时自动等它结算后返回（fetch 等异步调用不必再两步法）；awaitPromise=false 则返回同步语义（拿到 thenable 会得到 {}）；表达式抛异常时返回明确错误而不是 null", ToolCategory.JAVASCRIPT,
                 PermissionScope.EXECUTE_JS, RiskLevel.HIGH, timeoutMs = 45_000,
                 inputSchema = Schemas.objectSchema(
-                    "expression" to Schemas.strSchema("要执行的 JS 表达式"),
-                    "awaitPromise" to Schemas.boolSchema("是否等待 Promise（默认 false）"),
+                    "expression" to Schemas.strSchema("要执行的 JS 表达式（支持多语句，返回最后一个表达式的值）"),
+                    "awaitPromise" to Schemas.boolSchema("是否等待 Promise（默认 true；传 false 走同步路径，不强等 thenable）"),
                 ),
             ) { args ->
                 val expression = ToolArgs.str(args, "expression")
                 if (expression.isBlank()) return@tool McpToolResult.error("INVALID_ARGUMENTS", "expression 不能为空")
                 val session = deps.activeSession()
-                // awaitPromise 此前被忽略——现在真正路由到异步求值
-                //（引擎层等待 Promise 结算，修复返回 {} 的问题）
-                val result = if (ToolArgs.bool(args, "awaitPromise", false)) {
-                    deps.consoleManager.evaluateAsync(session.engine, expression)
+                // 修复（AI 使用体验）：默认走智能求值——单次 eval 内检测 thenable 并自动等待，
+                // 非 thenable 值保持旧的同步 JSON 语义，对既有调用零行为变化。
+                val result = if (ToolArgs.bool(args, "awaitPromise", true)) {
+                    deps.consoleManager.evaluateAuto(session.engine, expression)
                 } else {
                     deps.consoleManager.evaluate(session.engine, expression)
                 }

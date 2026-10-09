@@ -245,6 +245,17 @@ class DebuggerManager(
         return AppResult.success(sid)
     }
 
+    /**
+     * 任意 CDP 方法透传（薄封装，供上层做通用能力扩展）。
+     *
+     * 用途举例：`browser.screenshot` 的 fullPage / selector 需要
+     * `Page.captureScreenshot{captureBeyondViewport, clip}`；此前本类只封装固定域方法，
+     * 无处发起该调用，两个参数只能被静默忽略。
+     * @return CDP result 对象；未 attach / 调用失败返回 null
+     */
+    suspend fun cdpCall(engine: BrowserEngine, method: String, params: JsonObject = JsonObject(emptyMap())): JsonObject? =
+        cdpOf(engine)?.rawCall(method, params)
+
     /** CDP 会话诊断信息（连接状态/最近错误/重连计数） */
     fun sessionDiagnostics(engine: BrowserEngine): JsonObject {
         val cdp = cdpOf(engine)
