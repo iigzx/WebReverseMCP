@@ -88,6 +88,9 @@ class ScriptInterceptor {
         debuggerRemoved += lexResult.removed
 
         if (debuggerRemoved > 0) {
+            // 稳定规则名：对外的「契约名」，script_rewrite 记录 / 报告 / 测试按它识别
+            rules.add("neutralize_debugger_statements")
+            // 实现名：说明中和是在单遍词法状态下完成的（区别于历史的多轮全局正则）
             rules.add("lexical_debugger_neutralization")
             notes.add("词法感知中和 $debuggerRemoved 处调试语句（执行前拦截改写，字符串/注释安全）")
         } else {
@@ -350,6 +353,27 @@ class LexicalDebuggerSanitizer {
     }
 
     /**
+     * i 处标识符是否带 `new ` 前缀（`new Function("debugger")` 形态）。
+     *
+     * 背景：`matchDebuggerConstructor` 原先只用「前一个代码字符不是标识符字符」判词边界，
+     * 而 `new Function(...)` 里 `Function` 前面的字符是 `w` —— 属于标识符字符，
+     * 于是这种**最常见**的写法整条漏过（AntiDebugTest 实测失败）。这里补一条
+     * 「往前读一个标识符 run，若恰为 new 且 new 之前是边界」的判定。
+     */
+    private fun isNewPrefixedWord(source: String, i: Int): Boolean {
+        var j = i - 1
+        while (j >= 0 && source[j].isWhitespace()) j--
+        if (j < 0 || !isIdentPart(source[j])) return false
+        val wordEnd = j + 1
+        var s = j
+        while (s >= 0 && isIdentPart(source[s])) s--
+        if (source.substring(s + 1, wordEnd) != "new") return false
+        var k = s
+        while (k >= 0 && source[k].isWhitespace()) k--
+        return k < 0 || !isIdentPart(source[k])
+    }
+
+    /**
      * 代码态检测 debugger 构造器模式（P0-4）：
      *   `Function("debugger")` / `new Function('debugger')` / `eval("debugger")`
      *   / `.constructor("debugger")()`
@@ -359,8 +383,10 @@ class LexicalDebuggerSanitizer {
      */
     private fun matchDebuggerConstructor(source: String, i: Int, prev: Char, n: Int): Int {
         val wordStart = !isIdentPart(prev)
+        // 修复：`new Function("debugger")` 的前驱字符是 `w`，只判 prev 会整条漏过
+        val callStart = wordStart || isNewPrefixedWord(source, i)
 
-        if (wordStart && source.startsWith("Function", i) && (i + 8 >= n || !isIdentPart(source[i + 8]))) {
+        if (callStart && source.startsWith("Function", i) && (i + 8 >= n || !isIdentPart(source[i + 8]))) {
             val p = skipSpaces(source, i + 8)
             if (p < n && source[p] == '(') {
                 val e = debuggerCallEnd(source, p, requireTrailingCall = false)
@@ -368,7 +394,7 @@ class LexicalDebuggerSanitizer {
             }
         }
 
-        if (wordStart && source.startsWith("eval", i) && (i + 4 >= n || !isIdentPart(source[i + 4]))) {
+        if (callStart && source.startsWith("eval", i) && (i + 4 >= n || !isIdentPart(source[i + 4]))) {
             val p = skipSpaces(source, i + 4)
             if (p < n && source[p] == '(') {
                 val e = debuggerCallEnd(source, p, requireTrailingCall = false)

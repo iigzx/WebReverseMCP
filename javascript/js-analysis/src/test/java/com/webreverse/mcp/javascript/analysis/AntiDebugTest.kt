@@ -104,7 +104,8 @@ class AntiDebugTest {
 
     @Test
     fun `marks patched script once`() {
-        val r = interceptor.transform("var a = 1;")
+        // 标记只在脚本**确实被改写**时注入（未改写的响应保持原样，避免无谓改动 SRI 哈希）
+        val r = interceptor.transform("debugger; var a = 1;")
         assertTrue(r.transformed.contains("__WRMCP_SCRIPT_PATCHED__"))
     }
 
@@ -126,5 +127,44 @@ class AntiDebugTest {
 
         val clean = interceptor.transform("var o=1;")
         assertEquals(SriCompatibility.NONE, clean.sriCompatibility)
+    }
+
+    // ---------------- 回归：new Function 前缀 / 构造器调用 / 字符串与注释不被误伤 ----------------
+
+    @Test
+    fun `neutralizes new Function debugger and counts it`() {
+        // 回归：此前 prev 词边界只判「前一个字符不是标识符」，`new Function(...)` 的
+        // `Function` 前是 `w`，整条漏过（实测 AntiDebugTest 失败）
+        val r = interceptor.transform("var f = new Function(\"debugger\");")
+        assertTrue(r.debuggerNeutralized >= 1)
+        assertFalse(r.transformed.contains("\"debugger\""))
+    }
+
+    @Test
+    fun `neutralizes eval debugger literal`() {
+        val r = interceptor.transform("eval('debugger + 1 > 0 && 0');")
+        assertTrue(r.debuggerNeutralized >= 1)
+    }
+
+    @Test
+    fun `keeps debugger text inside strings comments and regex`() {
+        val src = """
+            var s = "debugger";
+            // debugger 注释里的文本
+            /* new Function("debugger") 注释 */
+            var re = /debugger/g;
+        """.trimIndent()
+        val r = interceptor.transform(src)
+        assertEquals(0, r.debuggerNeutralized)
+        assertTrue(r.transformed.contains("\"debugger\""))
+        assertTrue(r.transformed.contains("/debugger/g"))
+    }
+
+    @Test
+    fun `does not touch identifier containing debugger`() {
+        val r = interceptor.transform("var mydebugger = 1; obj.debuggerFlag = 2;")
+        assertEquals(0, r.debuggerNeutralized)
+        assertTrue(r.transformed.contains("mydebugger"))
+        assertTrue(r.transformed.contains("debuggerFlag"))
     }
 }
