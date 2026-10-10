@@ -324,7 +324,7 @@ cd WebReverseMCP
 {
   "mcpServers": {
     "webreverse": {
-      "url": "http://<Android-IP>:8787/mcp",
+      "url": "http://<Android-IP>:8998/mcp",
       "headers": {
         "Authorization": "Bearer <Your-Token>"
       }
@@ -338,7 +338,7 @@ cd WebReverseMCP
 MCP 对外仅提供 Streamable HTTP：
 
 ```text
-http://<Android-IP>:8787/mcp
+http://<Android-IP>:8998/mcp
 ```
 
 客户端通过 `POST /mcp` 发送 MCP JSON-RPC 请求；服务器不提供其他 MCP Transport。

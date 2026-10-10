@@ -50,12 +50,15 @@ data class McpServerConfig(
     /**
      * 服务器绑定地址。
      * 修复：原默认 "127.0.0.1" 只监听回环接口，局域网 AI 客户端连接
-     * LAN IP（如 192.168.1.7:8787）时 TCP 直接被拒（Failed to connect）。
+     * LAN IP（如 192.168.1.7:8998）时 TCP 直接被拒（Failed to connect）。
      * 现默认绑定 0.0.0.0 监听全部接口（回环 + WiFi + 热点），局域网可直连。
      * 客户端连接时仍用本机具体 IP（127.0.0.1 或局域网 IP），0.0.0.0 仅为绑定通配地址。
+     *
+     * 端口默认 8998（改版调整）：上游默认 8787 与另一个常用调试工具（MT MCP）撞车，
+     * 同机同时用时只能跑一个。改到 8998 避免冲突。
      */
     val host: String = "0.0.0.0",
-    val port: Int = 8787,
+    val port: Int = 8998,
     val enabled: Boolean = false,
     val lanOnly: Boolean = true,
     val ipAllowlist: List<String> = emptyList(),
@@ -73,7 +76,12 @@ data class McpServerConfig(
     val rateLimitPerMinute: Int = 0,
 ) {
     companion object {
-        /** 默认端口 */
-        const val DEFAULT_PORT: Int = 8787
+        /**
+         * 默认端口。
+         *
+         * 改版调整：上游默认 8787 与常用的 MT MCP（同样监听 8787）撞车，两者同时用时
+         * 只能跑一个。默认改到 8998，避免与既有调试工具互相抢端口。
+         */
+        const val DEFAULT_PORT: Int = 8998
     }
 }

@@ -223,9 +223,16 @@ class McpServerManager(
         }
     }
 
-    /** 读取已持久化的端口；无记录或非法时回退默认 8787 */
+    /** 读取已持久化的端口；无记录或非法时回退默认端口（McpServerConfig.DEFAULT_PORT，改版为 8998） */
     private fun loadSavedPort(): Int {
         val saved = portPrefs.getInt(KEY_PORT, -1)
+        // 旧默认值一次性迁移：老版本装过、沿用持久化的 8787（与 MT MCP 撞车）时换到新默认，
+        // 让"默认端口"改动的实际效果对新老安装一致。用户显式设过的其它端口不动。
+        if (saved == LEGACY_DEFAULT_PORT) {
+            savePort(McpServerConfig.DEFAULT_PORT)
+            logger.i(LogCategory.MCP, "端口 $LEGACY_DEFAULT_PORT 为旧默认值，已迁移到 ${McpServerConfig.DEFAULT_PORT}")
+            return McpServerConfig.DEFAULT_PORT
+        }
         return if (saved in 1024..65535) saved else McpServerConfig.DEFAULT_PORT
     }
 
@@ -322,5 +329,8 @@ class McpServerManager(
 
     companion object {
         private const val KEY_PORT = "mcp_server_port"
+
+        /** 旧默认端口（上游 8787）：仅用于把沿用它、从未改过端口的安装迁移到新默认 */
+        private const val LEGACY_DEFAULT_PORT = 8787
     }
 }

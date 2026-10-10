@@ -52,6 +52,9 @@ jobs:
     name: Debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # 需要 contents:write 才能把 APK 发到 rolling release（artifact 下载要登录，release 是匿名直链）
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -78,11 +81,23 @@ jobs:
         run: |
           mkdir -p dist
           find . -name '*.apk' -path '*/outputs/apk/*' -exec cp -v {} dist/ \;
-          ls -la dist
-      - name: Upload APK
+          cd dist && for f in *.apk; do mv -f "$f" WebReverseMCP-debug.apk; done
+          ls -la
+      - name: Upload APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: WebReverseMCP-debug-apk
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
+      # 额外发一个「固定链接」的 release：artifact 必须登录 GitHub 才能下载，
+      # 而 release 资产是匿名直链，手机浏览器点开即可安装（用户实际使用的取包方式）。
+      - name: Publish APK to rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view debug-latest >/dev/null 2>&1 || \
+            gh release create debug-latest --prerelease \
+              --title "WebReverseMCP 改版 · 最新构建（自动更新）" \
+              --notes "每次 main 构建自动覆盖本 release 的 APK。固定直链见下方资产名。"
+          gh release upload debug-latest dist/WebReverseMCP-debug.apk --clobber
