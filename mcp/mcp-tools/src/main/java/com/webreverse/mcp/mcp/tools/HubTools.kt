@@ -39,8 +39,20 @@ import kotlinx.serialization.json.put
  */
 object HubTools {
 
-    /** 单个 action 描述行截断长度（控制枢纽 description 总体积） */
+    /** 单个 action 简述的截断长度（控制枢纽 description 总体积；token 实测见下） */
     private const val DESC_LINE_MAX = 80
+
+    /**
+     * 枢纽 description 里是否内联该 action 的参数名（形如 `[expression, awaitPromise]`）。
+     *
+     * 背景（token 实测）：枢纽体积 = 客户端**每轮请求**都带的 `tools/list` 的一部分。
+     * 原实现把「参数名」同时写进 description 的行尾**和** inputSchema 的合并属性里，
+     * 而那份合并属性只是全成员参数的并集（HubTools 注释里也写明"仅提示性"）——
+     * 既重复又误导（看不出哪个参数属于哪个 action），实测 40 个枢纽共 87 KB ≈ 36k tokens。
+     * 现在：参数名只在 description 行尾出现一次，inputSchema 只留 action/subAction，
+     * 完整逐参数 schema 由 `mcp.tool_schema` 按需取（一次一个工具，比整体常驻省百倍）。
+     */
+    private const val INLINE_PARAM_NAMES = true
 
     /** 只读权限 scope（用于推导枢纽 permission：含任一写操作则整体按写算） */
     private val READ_ONLY_SCOPES = setOf(
@@ -155,11 +167,14 @@ object HubTools {
         val subActionMembers = sorted.filter { hasOwnActionParam(it) }
 
         // ---- 1) description：职责标题 + 全部 action 及各自入参（AI 选型依据） ----
+        // 体积纪律（token 实测）：参数名只在这里出现一次（行尾 `[a, b]`），
+        // inputSchema 不再重复合并全成员参数（见下方 schema 构建处的说明）。
         val title = HUB_TITLES[hubName]
         val desc = buildString {
             if (title != null) append(title).append('\n')
             append("$hubName 聚合工具（${sorted.size} 个 action）。")
-            append("用法：action 选动作，其余参数为该动作入参（各 action 参数见下）。可用 action：\n")
+            append("用法：action 选动作，其余参数为该动作入参（键名见各行末尾 [ ]；完整逐参数 schema 用 ")
+            append("mcp(action=\"tool_schema\", name=\"<成员名，如 ${sorted.first().metadata.name}>\") 取）。可用 action：\n")
             sorted.forEach { t ->
                 val action = t.metadata.name.removePrefix("$ns.")
                 val props = (t.metadata.inputSchema["properties"] as? JsonObject)?.keys?.toList().orEmpty()
@@ -167,7 +182,11 @@ object HubTools {
                     .firstOrNull { it.isNotBlank() }?.trim().orEmpty()
                 val brief = if (firstLine.length > DESC_LINE_MAX) firstLine.take(DESC_LINE_MAX) + "…" else firstLine
                 append("- $action: $brief")
-                if (props.isNotEmpty()) append("（参数: ${props.joinToString(", ")}）")
+                if (INLINE_PARAM_NAMES && props.isNotEmpty()) {
+                    // 参数名内联在行尾：比放进 inputSchema 更省（避免与 properties 重复），
+                    // 又比完全不写强（AI 不必为知道参数名而多调一次 tool_schema）
+                    append(" [").append(props.joinToString(", ")).append(']')
+                }
                 append('\n')
             }
             if (subActionMembers.isNotEmpty()) {
@@ -180,15 +199,13 @@ object HubTools {
             }
         }.trimEnd()
 
-        // ---- 2) inputSchema：action enum + 全成员参数并集（同名冲突取首个，仅提示性） ----
-        val mergedProps = LinkedHashMap<String, JsonObject>()
-        sorted.forEach { t ->
-            val props = t.metadata.inputSchema["properties"] as? JsonObject ?: return@forEach
-            props.forEach { (k, v) ->
-                val vo = v as? JsonObject ?: return@forEach
-                mergedProps.putIfAbsent(k, vo)
-            }
-        }
+        // ---- 2) inputSchema：只暴露调度键（action / subAction） ----
+        // 体积纪律（token 实测）：原实现把**全体成员参数的并集**铺进 properties，40 个枢纽
+        // 合计 16k tokens，而且那份并集只是"提示性"的（HubTools 原注释亦如此注明）——
+        // 它无法表达"哪个参数属于哪个 action"，反而诱导 AI 传错参数。参数名现在内联在
+        // description 各 action 行尾；需要逐参数的类型/默认值/枚举时，用
+        // mcp(action="tool_schema", name="<成员名>") 按需取（一次一个工具，不常驻）。
+        // 转发不受影响：枢纽始终把调用方给的 arguments 原样（按需剔除调度键）交给成员。
         val schema = buildJsonObject {
             put("type", "object")
             put(
@@ -202,7 +219,6 @@ object HubTools {
                             put("enum", JsonArray(actionNames.map { JsonPrimitive(it) }))
                         },
                     )
-                    mergedProps.forEach { (k, v) -> put(k, v) }
                     // 冲突成员的子动作入口（仅在有成员自带 action 入参时出现）
                     if (subActionMembers.isNotEmpty()) {
                         put(

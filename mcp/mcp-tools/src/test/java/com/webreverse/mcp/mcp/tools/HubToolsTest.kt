@@ -123,13 +123,23 @@ class HubToolsTest {
         val withOwner = hubOf(probe("hook.create", true))
         val props = withOwner.metadata.inputSchema["properties"]!!.jsonObject
         assertTrue(props.containsKey("subAction"))
-        // description 里要写清楚该成员自己的子动作取值，AI 才不用猜
+        // 体积纪律：inputSchema 只暴露调度键，参数名内联在 description（避免与 properties 重复）
+        assertEquals(setOf("action", "subAction"), props.keys)
         val hubDesc = withOwner.metadata.description
         assertTrue(hubDesc.contains("subAction"))
+        assertTrue(hubDesc.contains("[name]"))   // 成员参数名内联
 
         val withoutOwner = hubOf(probe("hook.list", false))
         val props2 = withoutOwner.metadata.inputSchema["properties"]!!.jsonObject
         assertFalse(props2.containsKey("subAction"))
+        assertEquals(setOf("action"), props2.keys)
+    }
+
+    @Test
+    fun compactSchemaPointsToToolSchemaForFullDetail() {
+        val hub = hubOf(probe("hook.create", true))
+        // description 必须告诉 AI 去哪取完整 schema，否则参数类型/默认值就无处可查
+        assertTrue(hub.metadata.description.contains("tool_schema"))
     }
 
     @Test
