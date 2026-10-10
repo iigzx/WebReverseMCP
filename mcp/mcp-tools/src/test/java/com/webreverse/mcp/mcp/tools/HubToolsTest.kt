@@ -127,7 +127,9 @@ class HubToolsTest {
         assertEquals(setOf("action", "subAction"), props.keys)
         val hubDesc = withOwner.metadata.description
         assertTrue(hubDesc.contains("subAction"))
-        assertTrue(hubDesc.contains("[name]"))   // 成员参数名内联
+        // 成员参数名内联在 description；自带 action 入参的成员不再内联 action
+        // （它的值来自 subAction，内联会误导 AI 自己填）
+        assertTrue(hubDesc.contains("[name]"))
 
         val withoutOwner = hubOf(probe("hook.list", false))
         val props2 = withoutOwner.metadata.inputSchema["properties"]!!.jsonObject

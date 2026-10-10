@@ -182,10 +182,13 @@ object HubTools {
                     .firstOrNull { it.isNotBlank() }?.trim().orEmpty()
                 val brief = if (firstLine.length > DESC_LINE_MAX) firstLine.take(DESC_LINE_MAX) + "…" else firstLine
                 append("- $action: $brief")
-                if (INLINE_PARAM_NAMES && props.isNotEmpty()) {
-                    // 参数名内联在行尾：比放进 inputSchema 更省（避免与 properties 重复），
-                    // 又比完全不写强（AI 不必为知道参数名而多调一次 tool_schema）
-                    append(" [").append(props.joinToString(", ")).append(']')
+                // 参数名内联在行尾：比放进 inputSchema 更省（避免与 properties 重复），
+                // 又比完全不写强（AI 不必为知道参数名而多调一次 tool_schema）。
+                // 自带 action 入参的成员剔除 action（它的值来自 subAction，见下方说明），
+                // 免得 AI 以为该 action 参数要自己填。
+                val inlineProps = if (hasOwnActionParam(t)) props.filter { it != "action" } else props
+                if (INLINE_PARAM_NAMES && inlineProps.isNotEmpty()) {
+                    append(" [").append(inlineProps.joinToString(", ")).append(']')
                 }
                 append('\n')
             }
